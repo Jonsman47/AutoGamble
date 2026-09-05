@@ -1,0 +1,12 @@
+{
+  "incomingPaymentPatterns": [
+    {
+      "enabled": false,
+      "regex": "(?<sender>[A-Za-z0-9_]{3,16}) paid you \\$(?<amount>[0-9.,]+)"
+    },
+    {
+      "enabled": false,
+      "regex": "You received \\$(?<amount>[0-9.,]+) from (?<sender>[A-Za-z0-9_]{3,16})"
+    }
+  ]
+}
