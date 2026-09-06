@@ -6,6 +6,8 @@ import java.math.BigDecimal;
 /** Owns unsaved text, so tabs, resizing and child screens cannot discard edits. */
 public final class SettingsDraft {
     public enum Field {
+        PREFIX_MIN("minimumPrefixLength", "Minimum Prefix Length", true),
+        PREFIX_MAX("maximumPrefixLength", "Maximum Prefix Length", true),
         AMOUNT("autoPayAmount", "Auto Pay Amount ($)", false),
         PAY_MIN("minimumAutoPayDelaySeconds", "Minimum Pay Delay (s)", false),
         PAY_MAX("maximumAutoPayDelaySeconds", "Maximum Pay Delay (s)", false),
@@ -38,7 +40,8 @@ public final class SettingsDraft {
                 if (value.length() > 32 || !value.matches("[0-9]+(?:\\.[0-9]+)?")) throw new IllegalArgumentException();
                 BigDecimal n = new BigDecimal(value);
                 var property = AutoGambleConfig.class.getField(f.key);
-                if (f.integer) property.setLong(working, n.longValueExact());
+                if (property.getType() == int.class) property.setInt(working, n.intValueExact());
+                else if (f.integer) property.setLong(working, n.longValueExact());
                 else property.setDouble(working, n.doubleValue());
             } catch (IllegalArgumentException | ArithmeticException e) { errors.add(f.label + ": enter a valid " + (f.integer ? "whole number." : "number.")); }
             catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }

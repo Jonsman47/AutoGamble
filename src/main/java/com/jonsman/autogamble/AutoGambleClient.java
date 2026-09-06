@@ -34,16 +34,21 @@ public final class AutoGambleClient implements ClientModInitializer {
     private RegexPaymentParser parser;
     private final PlayerSelectionManager selection = new PlayerSelectionManager();
     private ConfigManager configs;
+    private PayerHistory payerHistory;
     private AutoGambleConfig activeConfig;
     private KeyMapping toggle, settings;
     private Object lastConnection, lastWorld;
     private long configRevision = -1;
     private MinecraftPaymentDispatcher dispatcher;
     private boolean openSettingsRequested;
+    private boolean diagnostics;
+    private int debugRemaining;
 
     @Override public void onInitializeClient() {
         configs = new ConfigManager(FabricLoader.getInstance().getConfigDir().resolve("autogamble.json"), LOGGER);
         configs.load();
+        payerHistory = new PayerHistory(FabricLoader.getInstance().getConfigDir().resolve("autogamble-payers.json"));
+        gamble.history(payerHistory);
         activeConfig = configs.snapshot();
         refreshConfig();
         dispatcher = new MinecraftPaymentDispatcher(Minecraft.getInstance(), selection, outgoing, () -> activeConfig);
@@ -55,18 +60,15 @@ public final class AutoGambleClient implements ClientModInitializer {
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> resetSession());
         ClientLifecycleEvents.CLIENT_STOPPING.register(client -> resetSession());
         ClientSendMessageEvents.ALLOW_COMMAND.register(command ->
-                !SettingsCommandRouter.intercept(command, () -> openSettingsRequested = true));
-        ClientReceiveMessageEvents.GAME.register((message, overlay) -> {
-            var client = Minecraft.getInstance();
-            // Fabric delivers this on the client thread. Fail closed if another caller violates that contract.
-            if (!client.isSameThread() || !dispatcher.connected()) return;
-            syncSession(client);
-            refreshConfig();
-            gamble.receive(new ReceivedMessage(message.getString(), overlay ? ReceivedMessage.Channel.OVERLAY : ReceivedMessage.Channel.SYSTEM),
-                    client.player.getGameProfile().name(), System.nanoTime(), activeConfig);
-        });
+                { dispatcher.manualCommand(); return !SettingsCommandRouter.intercept(command, () -> openSettingsRequested = true); });
+        ClientReceiveMessageEvents.GAME.register((message, overlay) -> receive(message,
+                overlay ? ReceivedMessage.Channel.OVERLAY : ReceivedMessage.Channel.SYSTEM));
+        ClientReceiveMessageEvents.CHAT.register((message, signed, sender, type, timestamp) -> receive(message,
+                signed == null && sender == null ? ReceivedMessage.Channel.SERVER_CHAT : ReceivedMessage.Channel.PLAYER_CHAT));
         ClientCommandRegistrationCallback.EVENT.register((commands, registryAccess) -> commands.register(
                 literal("autogamble").then(literal("settings").executes(context -> { openSettingsRequested = true; return 1; }))
+                .then(literal("debug").then(literal("on").executes(context -> { diagnostics = true; debugRemaining = 100; context.getSource().sendFeedback(Component.literal("[AutoGamble] Receive diagnostics ON (next 100 messages; logs/latest.log)")); return 1; }))
+                        .then(literal("off").executes(context -> { diagnostics = false; return 1; })))
                 .then(literal("status").executes(context -> {
                     var c = configs.snapshot();
                     context.getSource().sendFeedback(Component.literal(String.format(java.util.Locale.ROOT,
@@ -78,21 +80,43 @@ public final class AutoGambleClient implements ClientModInitializer {
                             "[AutoGamble] gamble=%s, chance=%.2f%%, multiplier=%s, bets=%s–%s, payouts=%d, receipts=%d, patterns=%d, dryRun=%s",
                             c.gambleEnabled, c.winChance * 100, c.payoutMultiplier, c.minimumBet, c.maximumBet,
                             payments.size(), receipts.size(), parser.enabledCount(), c.dryRunMode)));
+                    context.getSource().sendFeedback(Component.literal("[AutoGamble] Player source=" + dispatcher.playerSource()
+                            + ", candidates=" + dispatcher.eligiblePlayers().size() + ", connected=" + dispatcher.connected()
+                            + ", screenBlocked=" + dispatcher.inputBlocked() + ", autoPayState=" + autoPay.state()
+                            + ", Donut parser=" + c.donutSmpIncomingEnabled));
+                    context.getSource().sendFeedback(Component.literal("[AutoGamble] Last parsed: " + gamble.lastIncoming()));
+                    context.getSource().sendFeedback(Component.literal("[AutoGamble] " + dispatcher.discoveryStatus()));
+                    context.getSource().sendFeedback(Component.literal(String.format(java.util.Locale.ROOT,
+                            "[AutoGamble] Base Win Chance: %.1f%%, First-Time Bonus: %s, First-Time Win Bonus: +%.1f%%, Known Payers: %d",
+                            c.winChance * 100, c.firstTimePayerBonusEnabled ? "ON" : "OFF", c.firstTimeWinBonus * 100, payerHistory.size())));
                     return 1;
                 }))));
-        LOGGER.info("[AutoGamble] 1.0.0 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
+        LOGGER.info("[AutoGamble] 1.0.5 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
+    }
+    private void receive(Component message, ReceivedMessage.Channel channel) {
+        var client = Minecraft.getInstance();
+        if (!client.isSameThread()) { client.execute(() -> receive(message, channel)); return; }
+        if (diagnostics && debugRemaining-- > 0)
+            LOGGER.info("[AutoGamble] Receive {}: {}", channel, ReceivedMessage.normalize(message.getString()).substring(0, Math.min(1024, ReceivedMessage.normalize(message.getString()).length())));
+        if (!dispatcher.connected()) return;
+        syncSession(client);
+        refreshConfig();
+        dispatcher.receiveFailure(new ReceivedMessage(message.getString(), channel));
+        var outcome = gamble.receive(new ReceivedMessage(message.getString(), channel), client.player.getGameProfile().name(), System.nanoTime(), activeConfig);
+        if (diagnostics && outcome != GambleManager.Outcome.IGNORED)
+            client.player.sendSystemMessage(Component.literal("[AutoGamble] " + gamble.lastIncoming()));
     }
     private void refreshConfig() {
         if (configRevision != configs.revision()) {
             var previous = activeConfig;
             activeConfig = configs.snapshot();
             configRevision = configs.revision();
-            parser = new RegexPaymentParser(activeConfig.incomingPaymentPatterns);
+            parser = RegexPaymentParser.fromConfig(activeConfig);
             gamble.parser(parser);
             var change = RuntimeSettingsChange.between(previous, activeConfig);
             if (change.clearPayouts()) payouts.cancel();
             if (change.resetSimulation()) { selection.reset(); receipts.reset(); }
-            if (change.resetAutoPay()) autoPay.reset();
+            if (change.resetAutoPay()) { autoPay.reset(); if (dispatcher != null) dispatcher.cancelDiscovery(); }
         }
     }
     private void syncSession(Minecraft client) {
@@ -129,14 +153,14 @@ public final class AutoGambleClient implements ClientModInitializer {
         payouts.tick(now, config, dispatcher);
         autoPay.tick(now, config, dispatcher, selection);
     }
-    private void cancelWork() { autoPay.reset(); payouts.cancel(); selection.reset(); }
+    private void cancelWork() { if (dispatcher != null) dispatcher.cancelDiscovery(); autoPay.reset(); payouts.cancel(); selection.reset(); }
     private void openSettings(Minecraft client) {
         if (client.gui.screen() instanceof AutoGambleSettingsScreen) return;
         var context = new SettingsContext(configs, this::refreshConfig, selection::reset,
-                () -> "TAB: " + dispatcher.eligiblePlayers().size() + "  •  Paid: " + selection.paidUsernames().size()
+                () -> "Candidates: " + dispatcher.eligiblePlayers().size() + "  •  Paid: " + selection.paidUsernames().size()
                         + "  •  Payouts: " + payments.size() + "  •  Patterns: " + parser.enabledCount(),
-                () -> client.player == null ? "" : client.player.getGameProfile().name());
+                () -> client.player == null ? "" : client.player.getGameProfile().name(), payerHistory::reset);
         client.gui.setScreen(new AutoGambleSettingsScreen(null, context));
     }
-    private void resetSession() { cancelWork(); gamble.reset(); lastConnection = null; lastWorld = null; }
+    private void resetSession() { if (dispatcher != null) dispatcher.resetSession(); cancelWork(); gamble.reset(); lastConnection = null; lastWorld = null; }
 }

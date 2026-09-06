@@ -1,11 +1,11 @@
-# AutoGamble 1.0.0
+# AutoGamble 1.0.5
 
-A client-only Fabric mod with randomized TAB auto-pay, configurable incoming-payment gambling,
+A client-only Fabric mod with randomized command-suggestion auto-pay, configurable incoming-payment gambling,
 and Minecraft-style in-game settings. **Dry Run Mode is ON by default.**
 
-**Incoming DonutSMP payment regex must be configured using an authentic server payment message before
-live gambling can work.** No authentic format has been supplied or verified. The included example
-patterns are disabled documentation examples, not confirmed DonutSMP support.
+The confirmed incoming DonutSMP format **`<player> paid you $ <amount>`** is supported by an enabled
+built-in pattern. **Use Dry Run first for live testing.** The incoming wording was confirmed by the
+user's authentic examples; outgoing confirmations and error formats have not been verified.
 
 ## Requirements and installation
 
@@ -13,16 +13,16 @@ patterns are disabled documentation examples, not confirmed DonutSMP support.
 | --- | --- |
 | Minecraft | **26.2** |
 | Java | **25** |
-| Fabric Loader | 0.19.5 |
+| Fabric Loader | 0.19.3 |
 | Fabric API | 0.159.0+26.2 |
 | Loom | 1.17.20 (`net.fabricmc.fabric-loom`) |
 | Gradle wrapper | 9.5.1 |
 
-Minecraft 26.2 is unobfuscated: this project has no mappings dependency. All toolchain versions are
-unchanged from the working Stage 1–3 builds.
+Minecraft 26.2 is unobfuscated: this project has no mappings dependency. Loader is now 0.19.3;
+Minecraft, Java, Fabric API, Loom and Gradle versions are otherwise unchanged.
 
 1. Install Fabric Loader for Minecraft 26.2 and use Java 25.
-2. Put `autogamble-1.0.0.jar` and the matching Fabric API JAR in your client's `mods` directory.
+2. Put `autogamble-1.0.5.jar` and the matching Fabric API JAR in your client's `mods` directory.
 3. Remove earlier AutoGamble JARs from that directory so only one version loads.
 4. Launch Minecraft. No server installation, plugin or custom network protocol is required.
 5. Open settings and start with Dry Run Mode ON. Auto Pay and Gambling are OFF by default.
@@ -75,10 +75,32 @@ Recent real outgoing-payment records retain their normal expiry protection.
 
 ## Auto Pay
 
-Auto Pay requires both the master switch and Auto Pay to be ON. It selects random valid profiles from
-the client-visible listed TAB entries, excludes the local player and malformed/duplicate names, and
-rechecks the target before dispatch. Client-visible data cannot reliably identify a server-created fake
-profile that looks exactly like a real player.
+Auto Pay starts a fresh discovery cycle when its payment timer expires. Each request independently
+chooses a uniformly random length between `minimumPrefixLength` and `maximumPrefixLength` (defaults
+1 and 3), then generates that many independent random lowercase a–z characters. It requests
+`/pay <prefix>` through vanilla command suggestions, never empty-prefix or TAB fallback. Only matching
+server-returned names are eligible; a separate persistent RNG selects the payment recipient.
+
+Open Auto Pay → Prefix Length to edit Minimum Prefix Length and Maximum Prefix Length. Both must be
+whole numbers in 1–3, with maximum at least minimum. Invalid drafts cannot be saved. GUI changes reset
+pending discovery and apply without restarting. Missing config fields acquire defaults without replacing
+existing settings; config schema remains 4.
+
+Empty or paid-only responses retry after 200 ms with a fresh random length and fresh letters. Exact
+prefix duplicates are resampled within the cycle. After 10 requests, no viable results skip the payment
+and start the normal configured delay. Unanswered requests time out after 3 seconds before retrying.
+A bounded resampling guard also fails safely with pathological injected randomness. Tried-prefix state
+clears on selection, exhaustion or session reset. Paid history remains shared across prefixes; the
+existing known-result cycle-reset policy applies only after the complete search is exhausted.
+
+**Skip Numeric-Only Names** remains ON by default. Failed targets, self and duplicate names remain
+excluded. Dry Run remains ON by default and never sends a real payment command.
+
+The exact server notice `That player does not exist` blacklists the most recent real advertising target
+for 10 minutes, only when received within 3 seconds of dispatch. This is conservative attribution, not a
+transaction-ID match. Winner dispatches and manual commands clear the attribution slot. Player-authored
+chat cannot blacklist targets. The blacklist is never saved and clears on server/world/session changes.
+Dry-run commands do not create real-error attribution.
 
 The configured amount is used, not a hardcoded $1. Amounts are formatted to at most two decimals.
 With Prefer Unpaid Players ON, each selection prefers names not yet paid in the current cycle. Once all
@@ -97,10 +119,13 @@ to a particular server address; enabled systems operate in the current connected
 
 ## Gambling and winner payouts
 
-Received system/overlay messages are observed using `ClientReceiveMessageEvents.GAME`, without modifying
-chat rendering. Signed player chat is not subscribed to. Enabled incoming regex patterns must match the
-whole normalized message and capture named groups `sender` and `amount`. Usernames and money are validated
-again after matching. Negative/zero amounts, malformed grouping, exponent notation and suffixes are rejected.
+Received system/overlay messages use `ClientReceiveMessageEvents.GAME`. Profileless server chat also
+uses `ClientReceiveMessageEvents.CHAT` (both signed-message and sender profile must be null). Known
+player-authored chat is rejected to prevent typed payment notices becoming bets. Neither hook changes
+or cancels rendering. Both feed the same parser and receipt cache, so duplicate deliveries roll once.
+The parser matches the whole normalized visible text, including `JonsmanV6or7 paid you $ 19.8k` → $19800.
+Minecraft Component styles do not affect `getString()`. User-defined patterns retain bounded matching;
+the constrained built-in grammar is evaluated independently of elapsed-time budgets.
 
 An accepted incoming bet rolls once against `winChance` (0–1 internally). A winner receives the full
 `received amount × payoutMultiplier`: $100 × 2 = $200. The stake is not subtracted. Actual received money
@@ -111,16 +136,16 @@ Winners enter a bounded FIFO with a new inclusive random delay before each head 
 Winner work is considered before advertising. A shared dispatch gate allows at most one payment attempt
 per tick across both sources. A winner is not dropped because advertising was due.
 
-Blocked/offline targets preserve the head and retry no sooner than 500 ms; an offline head can hold up
-later winners. Ambiguous send failures are logged and not retried, because retrying could double-pay.
+Disconnected or screen-blocked clients preserve the head and retry no sooner than 500 ms.
+A validated winner no longer has to appear in TAB; the server determines whether the payment is accepted. Ambiguous send failures are logged and not retried, because retrying could double-pay.
 A successful local API call is not proof of server acceptance or sufficient funds. A full 256-job queue
 causes new bets to be ignored before rolling. Disabling the master or gambling switch clears queued
 payouts and logs the count. Cancellation is not a refund or settlement of outstanding winners.
 
 ## Parser setup and testing
 
-1. Obtain authentic incoming and outgoing/error payment messages from the server.
-2. Edit `incomingPaymentPatterns` in `config/autogamble.json` using strict incoming-only patterns.
+1. Start with Dry Run ON. The confirmed DonutSMP incoming pattern is already available.
+2. If additional formats are needed, edit `incomingPaymentPatterns` in `config/autogamble.json`.
 3. Open Advanced → Parser Setup & Test → **Import Patterns from JSON**. Only the pattern array is
    imported into the draft; no real-payment flags or other settings are imported.
 4. Paste an exact message into **Test Payment Message** and press **Test Parser**.
@@ -129,7 +154,43 @@ payouts and logs the count. Cancellation is not a refund or settlement of outsta
 No restart is needed for import/Save. Imports reject invalid regex or missing named groups. Parser tests
 use the draft patterns and only return a result: they have no gamble manager, receipt cache, queue or
 dispatcher references. They never roll, gamble or send payments, even when live mode is enabled.
-The [disabled examples](docs/incoming-patterns.example.json) illustrate the JSON shape only.
+The [disabled examples](docs/incoming-patterns.example.json) illustrate the custom-pattern JSON shape.
+
+### Confirmed incoming format and suffixes
+
+The exact built-in regex is:
+
+```regex
+^(?<sender>[A-Za-z0-9_]{3,16})\s+paid\s+you\s+\$\s*(?<amount>[0-9][0-9,]*(?:\.[0-9]{1,2})?[kKmMbBtT]?)$
+```
+
+The existing 3–16 character Java username validation is retained. The message must match entirely,
+including `paid you` and `$`. Plain visible text normalization handles colors and whitespace; exact
+Minecraft style/color objects are not required. Signed player chat remains excluded.
+
+| Suffix (case-insensitive) | Multiplier |
+| --- | --- |
+| K | thousand: 1,000 |
+| M | million: 1,000,000 |
+| B | billion: 1,000,000,000 |
+| T | trillion: 1,000,000,000,000 |
+
+Examples: `$ 1k` → $1,000; `$ 1M` → $1,000,000; `2.5K` → 2500; `1.25B` → 1250000000.
+Plain integers, decimals and correctly grouped commas still work. Parsing uses only BigDecimal;
+suffixes are expanded before bet limits, deduplication, outgoing tracking and payout calculations.
+The parser-test screen shows the expanded numeric value. Unknown suffixes, repeated suffixes, signs,
+exponents and malformed decimal/grouping tokens are rejected.
+
+Incoming parsing is bounded at one trillion, while the existing configurable bet ceiling remains
+one billion and the default maximum bet remains one million. Thus `2M` parses correctly but is ignored
+at the default bet limit. The existing payout cap remains one trillion. Supporting a token does not
+automatically make it an accepted bet.
+
+`donutSmpIncomingEnabled` defaults true and controls the built-in separately from the custom-pattern
+array. Migration never inserts into or replaces that array. An exact custom copy of the built-in regex
+takes precedence (including if disabled); duplicate regex text is compiled once. Other custom patterns
+remain in their existing order. Equivalent differently written patterns cannot cause multiple rolls:
+the parser returns only its first match, followed by the shared receipt deduplicator.
 
 System-message delivery does not authenticate a financial transaction: servers may forward player text
 as system messages. A broad regex cannot make such text trustworthy. Verified message structure and
@@ -154,14 +215,15 @@ protection until expiry. Settings and networking remain on Minecraft's client th
 
 ## Configuration
 
-Stored at **`config/autogamble.json`**, relative to the Minecraft game directory. Schema version is **3**.
-Existing Stage 1–3 files migrate without losing their values; the missing `dryRunMode` defaults to true.
+Stored at **`config/autogamble.json`**, relative to the Minecraft game directory. Schema version is **4**.
+Existing files migrate without losing their values; missing `dryRunMode` and `donutSmpIncomingEnabled` default to true.
 Malformed files retain the existing backup/default recovery. Future schemas are read-only and disabled.
 Disk write failures are logged and shown in the UI; valid settings may remain active in memory.
 
 | Setting | Default |
 | --- | --- |
-| configVersion | 3 |
+| configVersion | 4 |
+| donutSmpIncomingEnabled | true |
 | dryRunMode | true |
 | enabled | true |
 | autoPayEnabled / gambleEnabled | false / false |
@@ -171,7 +233,7 @@ Disk write failures are logged and shown in the UI; valid settings may remain ac
 | winChance / payoutMultiplier | 0.50 / 2.0 |
 | minimumBet / maximumBet | 1 / 1,000,000 |
 | winnerDelayMinimumMs / winnerDelayMaximumMs | 200 / 700 |
-| incomingPaymentPatterns | empty array |
+| incomingPaymentPatterns | empty custom array; built-in DonutSMP pattern is separate |
 | receiptDeduplicationWindowMs | 2000 |
 | outgoingPaymentTrackingWindowMs | 10000 |
 
@@ -192,10 +254,10 @@ Set `JAVA_HOME` to JDK 25. From the project directory:
 ```
 
 On macOS/Linux use `sh gradlew test` and `sh gradlew build`.
-The installable artifact is **`build/libs/autogamble-1.0.0.jar`**; the sources JAR is for development.
+The installable artifact is **`build/libs/autogamble-1.0.5.jar`**; the sources JAR is for development.
 The project ZIP includes the Gradle wrapper, sources, tests, metadata, translations and documentation.
 
-The suite contains 80 tests: all 60 prior-stage tests plus 20 Stage 4 tests for dry-run dispatch,
+The suite contains 209 tests, retaining prior coverage and adding 26 first-payer tests. Coverage includes dry-run dispatch,
 migration, strict validation, live configuration policy, command routing, safe parser testing,
 pattern import, confirmation policy and winner priority. No test connects to DonutSMP.
 
@@ -204,6 +266,74 @@ The main additions are `AutoGambleSettingsScreen`, `AdvancedParserScreen`, `WinC
 `SettingsCommandRouter`, `PatternConfigService`, `ParserTestService` and `PaymentExecution`.
 Existing managers, queue, dispatcher, config persistence and keybinding registrations are reused.
 
-Authentic DonutSMP message patterns, real payment acceptance and live multi-player behavior are still
-unverified. No real payments have been made during development. See the final build report for the
-local UI smoke-test result.
+The confirmed incoming wording is implemented. Outgoing/error wording, real payment acceptance and
+live multi-player behavior remain unverified. B/T are explicitly supported as requested, but only the
+plain/K/M incoming examples were supplied as observed samples. No real payments have been made during
+development. See [the 1.0.5 patch report](docs/PATCH-1.0.5.md) for verification details.
+
+## Live diagnostics
+
+Use `/autogamble status` to see global/auto-pay/gamble flags, Dry Run, current player source and
+candidate count, paid history, next deadline, screen/connection blocks, last auto-pay state, parser
+state, last parsed receipt/result and pending payouts. Close screens to let payment timers dispatch.
+Dry Run deliberately sends nothing, but logs simulated advertising and gamble results.
+
+`/autogamble debug on` logs the next 100 received messages with channel and normalized text to
+`logs/latest.log`, and shows parsed outcomes locally. `/autogamble debug off` disables diagnostics.
+It is OFF by default and is not persisted. Logs can contain chat text; share only the relevant lines.
+If nothing parses, check that global/Gambling and the built-in parser are enabled, the sender isn't
+your own account, and the amount falls within bet limits. Manual config changes require restarting
+or the existing parser import workflow; GUI Save applies immediately.
+
+The previous code observed only GAME, and dispatch required TAB membership even for winners.
+These are verified limitations in code, not proof of the exact cause on DonutSMP. The assistant has
+not joined DonutSMP: actual receive channel, autocomplete scope, server acceptance/balance/errors,
+and signed/player-authored routing still require a live test. Dry Run remains ON by default.
+
+### 1.0.5 status additions
+
+`/autogamble status` reports Last Auto Pay Prefix, Last Candidate Count, Last Selected Player,
+Numeric-Only Filter and Failed Target Blacklist count. Active discovery source is
+`RANDOM_PREFIX_SUGGESTIONS`. The older 20-second empty-prefix cache is no longer used by the runtime.
+No live DonutSMP payment or autocomplete response was tested during this patch; local tests simulate
+server suggestions and verify exact dry/live dispatch behavior. Minecraft 26.2, Java 25 and Loader 0.19.3
+remain unchanged. Config schema remains 4: missing numeric-filter settings acquire the true default
+without replacing existing values or parser patterns.
+
+### 1.0.5 prefix status
+
+Status additionally reports Prefix Length Range, Last Prefix Length, Last Auto Pay Prefix, and
+Prefix Attempts This Cycle, alongside existing candidate/source/blacklist fields. Attempts reset to
+zero when the search finishes. Legacy fixed-length constructors exist for compatibility tests only;
+the live dispatcher exclusively uses the configurable range constructor with a ten-request limit.
+
+## First-time payer advantage (1.0.5)
+
+Under Gamble → First-Time Payer Bonus, enable/disable the feature (default ON) and adjust First-Time
+Win Bonus (default +10.0 percentage points; range 0–100, steps of 0.1). Internal config fields are
+`firstTimePayerBonusEnabled=true` and `firstTimeWinBonus=0.10`. Missing fields acquire defaults while
+existing settings remain intact; schema 4 is retained for these additive compatible fields.
+
+A new payer's effective chance is base chance plus bonus, capped at 100%. For example 39.4% + 15 points
+is 54.4%, and 90% + 20 points is 100%. Payout multipliers and amounts do not change. The base-odds
+regression tests explicitly turn the optional bonus off; first-time behavior has separate tests.
+
+Only an accepted bet that reaches its single roll consumes first-time status, on both win and loss.
+Malformed, duplicate, outgoing, disabled, out-of-range and capacity-rejected bets do not consume it.
+The bonus check, roll and history insertion occur sequentially on the client thread. Distinct rapid
+bets from the same username therefore receive the bonus only once. Dry Run incoming bets DO consume
+first-time status; parser-test messages still do not roll or record payers. Bets with the bonus disabled
+also record the payer, because they remain accepted bets.
+
+History is separate from config in `config/autogamble-payers.json`, version 1, containing lowercase
+Locale.ROOT usernames. It loads on startup and saves each new payer through a temporary file and atomic
+replacement where supported. Disconnects, world switches, mode changes and normal config migrations
+never clear it. It applies across servers, as requested for a player's first-ever accepted bet.
+Disk failures are logged; current in-memory state remains. Persistence across restarts requires writable
+storage. Corrupt data is backed up with a .corrupt timestamp suffix and recovered as empty history, so
+unknown prior payers may regain the bonus after corruption.
+
+The bonus settings include Reset First-Time Payer History with explicit Reset/Cancel confirmation.
+A successful reset is immediate and persistent, independently of unsaved settings. A failed reset save
+restores the in-memory history and shows an error. Status reports base chance, bonus switch/value and
+known-payer count, never the full name list. Real DonutSMP transactions were not performed in development.

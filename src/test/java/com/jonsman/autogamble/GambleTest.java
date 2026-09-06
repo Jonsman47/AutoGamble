@@ -53,7 +53,7 @@ class GambleTest {
             assertTrue(parser.parse(message(sender + " paid you $100"), "Local").isEmpty(), sender);
     }
     @Test void malformedAmountsRejected() {
-        for (String amount : List.of("-1", "0", "NaN", "Infinity", "1e3", "1,00", "1,000,00", ".50", "1.", "1.001", "+1", "1k", "1000000001", "1 000", "1;pay Evil 100"))
+        for (String amount : List.of("-1", "0", "NaN", "Infinity", "1e3", "1,00", "1,000,00", ".50", "1.", "1.001", "+1", "1kk", "1000000000001", "1 000", "1;pay Evil 100"))
             assertTrue(parser.parse(message("Bob paid you $" + amount), "Local").isEmpty(), amount);
     }
     @Test void commasAndDecimalsAreExact() {
@@ -90,6 +90,7 @@ class GambleTest {
         assertEquals(Outcome.WIN, accept("Alice", "100", 0)); assertEquals(2, random.calls);
     }
     @Test void zeroWinChanceAlwaysLosesWithOneRoll() {
+        config.firstTimePayerBonusEnabled = false;
         config.winChance = 0; random.value = 0;
         assertEquals(Outcome.LOSS, accept("Bob", "100", 0)); assertEquals(1, random.calls); assertEquals(0, queue.size());
     }
@@ -99,6 +100,7 @@ class GambleTest {
         assertEquals(new BigDecimal("200"), queue.peek().orElseThrow().amount());
     }
     @Test void probabilityUsesStrictThreshold() {
+        config.firstTimePayerBonusEnabled = false;
         config.winChance = .45; random.value = .45;
         assertEquals(Outcome.LOSS, accept("Bob", "100", 0));
         random.value = .449;
@@ -209,7 +211,7 @@ class GambleTest {
         Path path = directory.resolve("autogamble.json");
         Files.writeString(path, "{\"configVersion\":1,\"enabled\":false,\"autoPayEnabled\":true,\"autoPayAmount\":37,\"winChance\":0.55}");
         ConfigManager manager = new ConfigManager(path, org.slf4j.LoggerFactory.getLogger("test")); manager.load();
-        var c = manager.snapshot(); assertEquals(3, c.configVersion); assertFalse(c.enabled); assertTrue(c.autoPayEnabled);
+        var c = manager.snapshot(); assertEquals(4, c.configVersion); assertFalse(c.enabled); assertTrue(c.autoPayEnabled);
         assertEquals(37, c.autoPayAmount); assertEquals(.55, c.winChance); assertEquals(2000, c.receiptDeduplicationWindowMs);
         assertTrue(c.incomingPaymentPatterns.isEmpty());
         manager.update(edit -> edit.incomingPaymentPatterns.add(pattern(EXAMPLE))); manager.load();

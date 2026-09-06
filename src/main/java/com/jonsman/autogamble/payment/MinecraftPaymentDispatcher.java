@@ -11,6 +11,11 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
     private final PlayerSelectionManager selection;
     private final OutgoingPaymentTracker outgoing;
     private final java.util.function.Supplier<com.jonsman.autogamble.config.AutoGambleConfig> config;
+    private final java.util.Random prefixRandom = new java.util.Random();
+    private PrefixPlayerDiscovery discovery = new PrefixPlayerDiscovery(prefixRandom, 1, 3);
+    private int prefixMin = 1, prefixMax = 3;
+    private final FailedTargetBlacklist failed = new FailedTargetBlacklist();
+    private boolean sendingPayment;
     private final DispatchGate gate = new DispatchGate();
     public MinecraftPaymentDispatcher(Minecraft client, PlayerSelectionManager selection, OutgoingPaymentTracker outgoing,
                                      java.util.function.Supplier<com.jonsman.autogamble.config.AutoGambleConfig> config) {
@@ -22,27 +27,77 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
                 && client.getConnection() != null && client.getConnection().getConnection().isConnected();
     }
     @Override public boolean inputBlocked() { return client == null || client.gui.screen() != null || client.gui.overlay() != null; }
+    public void resetSession() { discovery.reset(); failed.reset(); }
+    public void cancelDiscovery() { discovery.cancel(); }
+    @Override public void finishDiscovery() { discovery.cancel(); }
+    public String playerSource() { return "RANDOM_PREFIX_SUGGESTIONS"; }
+    public String discoveryStatus() {
+        return "Prefix Length Range: " + config.get().minimumPrefixLength + "–" + config.get().maximumPrefixLength
+            + ", Last Prefix Length: " + discovery.lastLength() + ", Prefix Attempts This Cycle: " + discovery.attempts()
+            + ", Last Auto Pay Prefix: " + discovery.prefix() + ", Last Candidate Count: " + discovery.count()
+            + ", Last Selected Player: " + discovery.selected() + ", Numeric-Only Filter: "
+            + (config.get().excludeNumericOnlyNames ? "ON" : "OFF") + ", Failed Target Blacklist: " + failed.size(System.nanoTime());
+    }
+    public void manualCommand() { if (!sendingPayment) failed.unrelatedCommand(); }
+    public void receiveFailure(ReceivedMessage message) {
+        failed.receive(message, System.nanoTime()).ifPresent(name ->
+            org.slf4j.LoggerFactory.getLogger("autogamble").info("[AutoGamble] Temporarily excluding failed Auto Pay target {} for 10 minutes", name));
+    }
+    @Override public boolean prepare(long now) {
+        if (!connected() || inputBlocked()) return false;
+        var c = config.get();
+        if (prefixMin != c.minimumPrefixLength || prefixMax != c.maximumPrefixLength) {
+            discovery.cancel(); prefixMin = c.minimumPrefixLength; prefixMax = c.maximumPrefixLength;
+            discovery = new PrefixPlayerDiscovery(prefixRandom, prefixMin, prefixMax);
+        }
+        var activeDiscovery = discovery;
+        discovery.poll(now, selection, c.preferUnpaidPlayers).ifPresent(request -> {
+            var connection = client.getConnection();
+            String local = client.player.getGameProfile().name();
+            try {
+                var context = connection.getCommands().parse(request.command().substring(1), connection.getSuggestionsProvider())
+                        .getContext().build(request.command());
+                connection.getSuggestionsProvider().customSuggestion(context).whenComplete((result, error) ->
+                    client.execute(() -> {
+                        if (client.getConnection() != connection || discovery != activeDiscovery) return;
+                        var current = config.get();
+                        if (!current.enabled || !current.autoPayEnabled) { discovery.cancel(); return; }
+                        discovery.complete(request.token(), error == null ? result.getList().stream().map(s -> s.getText()).toList() : List.of(),
+                            local, current.excludeNumericOnlyNames, failed, selection, current.preferUnpaidPlayers, System.nanoTime());
+                    }));
+            } catch (RuntimeException ex) {
+                discovery.complete(request.token(), List.of(), local, c.excludeNumericOnlyNames, failed, selection, c.preferUnpaidPlayers, now);
+            }
+        });
+        return discovery.ready();
+    }
     @Override public List<Candidate> eligiblePlayers() {
         if (!connected()) return List.of();
-        var entries = client.getConnection().getListedOnlinePlayers().stream()
-                .filter(info -> info != null && info.getProfile() != null)
-                .map(info -> new Candidate(info.getProfile().id(), info.getProfile().name())).toList();
-        return selection.eligible(entries, client.player.getUUID(), client.player.getGameProfile().name());
+        return discovery.candidates().stream().filter(p -> PrefixPlayerDiscovery.validName(p.username(), client.player.getGameProfile().name(), config.get().excludeNumericOnlyNames)
+                && !failed.contains(p.username(), System.nanoTime())).toList();
     }
     @Override public boolean dispatch(Candidate target, String amount) {
         if (!connected() || inputBlocked() || !client.isSameThread() || !eligiblePlayers().contains(target)) return false;
         if (amount == null || !amount.matches("[0-9]+(?:\\.[0-9]{1,2})?")) return false;
+        discovery.selected(target.username());
         return sendPayment(target.username(), new java.math.BigDecimal(amount), OutgoingPaymentTracker.Source.ADVERTISING) == Result.SENT;
     }
     @Override public Result sendPayment(String username, java.math.BigDecimal amount, OutgoingPaymentTracker.Source source) {
         var c = config.get();
         if (!c.enabled || (source == OutgoingPaymentTracker.Source.ADVERTISING ? !c.autoPayEnabled : !c.gambleEnabled)
                 || !connected() || inputBlocked() || !client.isSameThread()) return Result.RETRY_LATER;
-        if (username == null || !username.matches("[A-Za-z0-9_]{3,16}")
-                || eligiblePlayers().stream().noneMatch(p -> p.username().equalsIgnoreCase(username))) return Result.RETRY_LATER;
+        if (username == null || !username.matches("[A-Za-z0-9_]{2,16}")
+                || username.equalsIgnoreCase(client.player.getGameProfile().name())
+                || (source == OutgoingPaymentTracker.Source.ADVERTISING
+                    && eligiblePlayers().stream().noneMatch(p -> p.username().equalsIgnoreCase(username)))) return Result.RETRY_LATER;
         String formatted = AmountFormatter.format(amount);
         if (!gate.reserve()) return Result.RETRY_LATER;
         return PaymentExecution.execute(c.dryRunMode, username, new java.math.BigDecimal(formatted), source,
-                System.nanoTime(), c.outgoingPaymentTrackingWindowMs, outgoing, command -> client.getConnection().sendCommand(command));
+                System.nanoTime(), c.outgoingPaymentTrackingWindowMs, outgoing, command -> {
+                    failed.dispatched(username, source, System.nanoTime());
+                    sendingPayment = true;
+                    try { client.getConnection().sendCommand(command); }
+                    finally { sendingPayment = false; }
+                });
     }
 }

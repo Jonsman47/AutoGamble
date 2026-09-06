@@ -9,15 +9,22 @@ import org.slf4j.LoggerFactory;
 
 /** Explicit opt-in, full-message regex matches with named sender/amount groups. */
 public final class RegexPaymentParser implements PaymentParser {
+    /** Built-in is separate from custom JSON patterns. Never modifies the user's list. */
+    public static RegexPaymentParser fromConfig(com.jonsman.autogamble.config.AutoGambleConfig config) {
+        List<IncomingPattern> effective = new ArrayList<>(config.incomingPaymentPatterns);
+        if (config.donutSmpIncomingEnabled && effective.stream().noneMatch(p -> p.regex.equals(DonutSmpPattern.REGEX)))
+            effective.addFirst(new IncomingPattern(true, DonutSmpPattern.REGEX));
+        return new RegexPaymentParser(effective);
+    }
     private final List<Pattern> patterns = new ArrayList<>();
     public RegexPaymentParser(List<IncomingPattern> configured) {
         for (var entry : configured) {
-            if (patterns.size() >= 16) break;
+            if (patterns.size() >= 17) break;
             if (entry == null || !entry.enabled || entry.regex == null || entry.regex.length() > 512) continue;
             try {
                 Pattern p = Pattern.compile(entry.regex);
                 if (!p.namedGroups().keySet().containsAll(Set.of("sender", "amount"))) throw new IllegalArgumentException("Missing named groups");
-                patterns.add(p);
+                if (patterns.stream().noneMatch(existing -> existing.pattern().equals(p.pattern()))) patterns.add(p);
             } catch (IllegalArgumentException e) { LoggerFactory.getLogger("autogamble").warn("[AutoGamble] Invalid incoming pattern disabled: {}", e.getMessage()); }
         }
     }
@@ -33,7 +40,9 @@ public final class RegexPaymentParser implements PaymentParser {
         Budget budget = new Budget();
         for (Pattern pattern : patterns) {
             try {
-                var match = pattern.matcher(new LimitedText(text, 0, text.length(), budget));
+                // The bounded built-in grammar is trusted; a client-frame pause must not make it miss a receipt.
+                var match = pattern.matcher(pattern.pattern().equals(DonutSmpPattern.REGEX)
+                        ? text : new LimitedText(text, 0, text.length(), budget));
                 if (!match.matches()) continue;
                 String sender = match.group("sender");
                 if (sender == null || !sender.matches("[A-Za-z0-9_]{3,16}") || sender.equalsIgnoreCase(local)) continue;

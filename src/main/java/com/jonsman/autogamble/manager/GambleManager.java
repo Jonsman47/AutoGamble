@@ -13,6 +13,14 @@ public final class GambleManager {
     @FunctionalInterface public interface InvalidBetPolicy { void ignored(PaymentParser.IncomingPayment payment); }
     private static final Logger LOG = LoggerFactory.getLogger("autogamble");
     private PaymentParser parser;
+    private com.jonsman.autogamble.config.PayerHistory history = new com.jonsman.autogamble.config.PayerHistory();
+    public void history(com.jonsman.autogamble.config.PayerHistory history) { this.history = history; }
+    public int knownPayers() { return history.size(); }
+    public static double effectiveChance(double base, double bonus, boolean enabled, boolean first) {
+        return Math.min(1, base + (enabled && first ? bonus : 0));
+    }
+    private String lastIncoming = "none";
+    public String lastIncoming() { return lastIncoming; }
     private final PaymentQueue queue;
     private final ReceiptDeduplicator receipts;
     private final OutgoingPaymentTracker outgoing;
@@ -26,7 +34,11 @@ public final class GambleManager {
     public void parser(PaymentParser parser) { this.parser = parser; }
     public PaymentParser parser() { return parser; }
     public Outcome receive(ReceivedMessage message, String local, long now, AutoGambleConfig config) {
-        return parser.parse(message, local).map(p -> accept(p, local, now, config)).orElse(Outcome.IGNORED);
+        return parser.parse(message, local).map(p -> {
+            var outcome = accept(p, local, now, config);
+            lastIncoming = p.sender() + " $" + AmountFormatter.format(p.amount()) + " -> " + outcome + (config.dryRunMode ? " (dry run)" : "");
+            return outcome;
+        }).orElse(Outcome.IGNORED);
     }
     public Outcome accept(PaymentParser.IncomingPayment payment, String local, long now, AutoGambleConfig c) {
         if (payment.sender().equalsIgnoreCase(local)) return Outcome.INVALID;
@@ -51,7 +63,12 @@ public final class GambleManager {
         if (!queue.hasCapacity()) { LOG.warn("[AutoGamble] Payout queue full; bet ignored before rolling"); return Outcome.CAPACITY; }
         String mode = c.dryRunMode ? "DRY RUN: " : "";
         LOG.info("[AutoGamble] {}Incoming bet: {} ${}", mode, payment.sender(), payment.amount());
-        boolean wins = random.nextDouble() < c.winChance;
+        boolean first = !history.contains(payment.sender());
+        double chance = effectiveChance(c.winChance, c.firstTimeWinBonus, c.firstTimePayerBonusEnabled, first);
+        LOG.info("[AutoGamble] First-time payer={}, bonus={} percentage points, effective chance={} percent", first,
+                first && c.firstTimePayerBonusEnabled ? c.firstTimeWinBonus * 100 : 0, chance * 100);
+        boolean wins = random.nextDouble() < chance;
+        if (first) history.add(payment.sender());
         if (!wins) { LOG.info("[AutoGamble] {}{} lost", mode, payment.sender()); return Outcome.LOSS; }
         queue.offer(new PaymentQueue.Payment(payment.sender(), payout, PaymentQueue.Purpose.WINNER_PAYOUT, now));
         LOG.info("[AutoGamble] {}{} WON -> {}pay ${}", mode, payment.sender(), c.dryRunMode ? "would " : "", AmountFormatter.format(payout));
@@ -65,5 +82,5 @@ public final class GambleManager {
         receipts.expire(now, c.receiptDeduplicationWindowMs);
         outgoing.expire(now, c.outgoingPaymentTrackingWindowMs);
     }
-    public void reset() { receipts.reset(); outgoing.reset(); }
+    public void reset() { lastIncoming = "none"; receipts.reset(); outgoing.reset(); }
 }

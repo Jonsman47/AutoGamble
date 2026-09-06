@@ -5,7 +5,10 @@ public record RuntimeSettingsChange(boolean resetAutoPay, boolean clearPayouts, 
     public static RuntimeSettingsChange between(AutoGambleConfig before, AutoGambleConfig after) {
         boolean mode = before != null && before.dryRunMode != after.dryRunMode;
         return new RuntimeSettingsChange(!after.enabled || !after.autoPayEnabled || mode
-                || (before != null && (before.enabled != after.enabled || before.autoPayEnabled != after.autoPayEnabled)),
+                || (before != null && (before.enabled != after.enabled || before.autoPayEnabled != after.autoPayEnabled
+                    || before.excludeNumericOnlyNames != after.excludeNumericOnlyNames
+                    || before.preferUnpaidPlayers != after.preferUnpaidPlayers
+                    || before.minimumPrefixLength != after.minimumPrefixLength || before.maximumPrefixLength != after.maximumPrefixLength)),
                 !after.enabled || !after.gambleEnabled || mode, mode);
     }
     public static boolean requiresRealPaymentConfirmation(AutoGambleConfig before, AutoGambleConfig after) {

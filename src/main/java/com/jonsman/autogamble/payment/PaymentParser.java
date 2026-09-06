@@ -14,7 +14,7 @@ public interface PaymentParser {
     record IncomingPayment(String sender, BigDecimal amount, String receiptId) {
         public IncomingPayment {
             if (sender == null || !sender.matches("[A-Za-z0-9_]{3,16}") || amount == null
-                    || amount.signum() <= 0 || amount.compareTo(new BigDecimal("1000000000")) > 0
+                    || amount.signum() <= 0 || amount.compareTo(new BigDecimal("1000000000000")) > 0
                     || amount.stripTrailingZeros().scale() > 2 || receiptId == null)
                 throw new IllegalArgumentException("Invalid incoming receipt");
         }

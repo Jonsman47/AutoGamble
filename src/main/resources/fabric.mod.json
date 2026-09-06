@@ -3,9 +3,9 @@
   "id": "autogamble",
   "version": "${version}",
   "name": "AutoGamble",
-  "description": "Client-side TAB auto-pay, configurable incoming-payment gambling and in-game settings. Dry run is on by default; verified incoming patterns are required.",
+  "description": "Client-side command-suggestion auto-pay, DonutSMP incoming-payment parsing with K/M/B/T amounts, gambling and settings. Dry run is on by default.",
   "authors": ["jonsman"],
   "environment": "client",
   "entrypoints": {"client": ["com.jonsman.autogamble.AutoGambleClient"]},
-  "depends": {"fabricloader": ">=0.19.5", "minecraft": "26.2", "java": ">=25", "fabric-api": ">=0.159.0+26.2"}
+  "depends": {"fabricloader": ">=0.19.3", "minecraft": "26.2", "java": ">=25", "fabric-api": ">=0.159.0+26.2"}
 }

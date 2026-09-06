@@ -21,3 +21,35 @@ processResources {
     filesMatching('fabric.mod.json') { expand version: project.version }
 }
 test { useJUnitPlatform() }
+
+// Keep earlier releases outside build/, so Gradle clean cannot delete the archive.
+def archivePreviousReleases = tasks.register('archivePreviousReleases') {
+    doLast {
+        def libs = layout.buildDirectory.dir('libs').get().asFile
+        def archiveRoot = layout.projectDirectory.dir('releases/archive').asFile.toPath().toAbsolutePath().normalize()
+        if (libs.isDirectory()) {
+            libs.listFiles().findAll { it.isFile() }.each { artifact ->
+                def match = artifact.name =~ /^autogamble-(\d+\.\d+\.\d+(?:-[A-Za-z0-9.]+)?)(-sources)?\.jar$/
+                if (match.matches()) {
+                    // Strip the optional source suffix before comparing versions.
+                    def artifactVersion = artifact.name.substring('autogamble-'.length()).replaceFirst(/(?:-sources)?\.jar$/, '')
+                    if (artifactVersion != project.version.toString()) {
+                        def destination = archiveRoot.resolve(artifactVersion).resolve(artifact.name).normalize()
+                        if (!destination.startsWith(archiveRoot)) throw new GradleException('Invalid archive path')
+                        java.nio.file.Files.createDirectories(destination.parent)
+                        if (java.nio.file.Files.exists(destination)) {
+                            if (java.nio.file.Files.mismatch(artifact.toPath(), destination) != -1L)
+                                throw new GradleException("Archive already contains a different ${artifact.name}; preserving both files")
+                            java.nio.file.Files.delete(artifact.toPath())
+                        } else {
+                            java.nio.file.Files.move(artifact.toPath(), destination)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+tasks.named('jar') { dependsOn archivePreviousReleases }
+tasks.named('sourcesJar') { dependsOn archivePreviousReleases }
+tasks.named('clean') { dependsOn archivePreviousReleases }

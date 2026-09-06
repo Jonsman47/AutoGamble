@@ -36,22 +36,27 @@ public final class AutoGambleSettingsScreen extends Screen {
                 toggle("Dry Run Mode", () -> draft.working.dryRunMode, v -> draft.working.dryRunMode = v,
                         "Simulates payments. Disabling this allows real /pay commands.");
                 toggle("AutoGamble Enabled", () -> draft.working.enabled, v -> draft.working.enabled = v, "Master switch for both payment systems.");
-                toggle("Auto Pay Enabled", () -> draft.working.autoPayEnabled, v -> draft.working.autoPayEnabled = v, "Pays random visible TAB players while enabled.");
+                toggle("Auto Pay Enabled", () -> draft.working.autoPayEnabled, v -> draft.working.autoPayEnabled = v, "Pays random server-exposed players while enabled.");
                 toggle("Gambling Enabled", () -> draft.working.gambleEnabled, v -> draft.working.gambleEnabled = v, "Processes incoming bets only when a verified pattern matches.");
             }
             case 1 -> {
+                row = 70;
                 number(Field.AMOUNT, "Amount per advertising payment. At least $0.01.");
                 number(Field.PAY_MIN, "Lower bound for a fresh random delay after each attempt.");
                 number(Field.PAY_MAX, "Must be at least the minimum delay.");
                 toggle("Prefer Unpaid Players", () -> draft.working.preferUnpaidPlayers, v -> draft.working.preferUnpaidPlayers = v,
-                        "Tries to pay each visible TAB player once before repeating.");
-                button("Reset Paid Player History…", left, row, panel, () -> minecraft.gui.setScreen(new ConfirmScreen(yes -> {
+                        "Tries to pay each known candidate once before repeating.");
+                toggle("Skip Numeric-Only Names", () -> draft.working.excludeNumericOnlyNames, v -> draft.working.excludeNumericOnlyNames = v,
+                        "Skips player names made entirely from numbers.");
+                button("Prefix Length…", left + panel / 2 + 3, row, panel / 2 - 3, () -> { page = 6; rebuildWidgets(); });
+                button("Reset Paid History…", left, row, panel / 2 - 3, () -> minecraft.gui.setScreen(new ConfirmScreen(yes -> {
                     if (yes) context.resetPaid().run(); minecraft.gui.setScreen(this);
                 }, Component.literal("Reset paid player history?"), Component.literal("This clears the current cycle immediately."))));
             }
             case 2 -> {
                 var slider = addRenderableWidget(new WinChanceSlider(left, row, panel, draft.working.winChance, v -> { draft.working.winChance = v; validateDraft(); }));
-                slider.setTooltip(Tooltip.create(Component.literal("Chance that an accepted bet wins. Adjusts in 0.1% steps."))); row += 24;
+                slider.setTooltip(Tooltip.create(Component.literal("Chance that an accepted bet wins. Adjusts in 0.1% steps."))); row += page == 1 ? 21 : 24;
+                button("First-Time Payer Bonus…", left, row, panel, () -> { page = 7; rebuildWidgets(); }); row += 24;
                 number(Field.MULTIPLIER, "Amount returned to a winner relative to their bet.");
                 number(Field.BET_MIN, "Smaller bets are ignored without an automatic refund.");
                 number(Field.BET_MAX, "Larger bets are ignored without an automatic refund.");
@@ -64,6 +69,24 @@ public final class AutoGambleSettingsScreen extends Screen {
                 number(Field.DEDUP, "Prevents the same server payment from being processed more than once.");
                 number(Field.TRACK, "Rejects incoming candidates matching recently sent payments.");
                 button("Parser Setup & Test…", left, row + 8, panel, () -> minecraft.gui.setScreen(new AdvancedParserScreen(this, context, draft)));
+            }
+            case 7 -> {
+                toggle("First-Time Payer Bonus", () -> draft.working.firstTimePayerBonusEnabled, v -> draft.working.firstTimePayerBonusEnabled = v,
+                        "Gives a player's first accepted bet a higher chance to win.");
+                var bonus = addRenderableWidget(new WinChanceSlider(left, row, panel, draft.working.firstTimeWinBonus,
+                        v -> { draft.working.firstTimeWinBonus = v; validateDraft(); }, "First-Time Win Bonus: +"));
+                bonus.setTooltip(Tooltip.create(Component.literal("Gives a player's first accepted bet a higher chance to win."))); row += 24;
+                button("Reset First-Time Payer History", left, row, panel, () -> minecraft.gui.setScreen(new ConfirmScreen(yes -> {
+                    boolean ok = !yes || context.resetPayers().getAsBoolean(); minecraft.gui.setScreen(this);
+                    if (!ok) error = "Could not save payer history reset. Check logs.";
+                }, Component.literal("Reset payer history?"), Component.literal("All players will become eligible for the first-time win bonus again."),
+                    Component.literal("Reset"), Component.literal("Cancel")))); row += 24;
+                button("Back to Gamble", left, row, panel, () -> { page = 2; rebuildWidgets(); });
+            }
+            case 6 -> {
+                number(Field.PREFIX_MIN, "Shortest random autocomplete prefix.");
+                number(Field.PREFIX_MAX, "Longest random autocomplete prefix.");
+                button("Back to Auto Pay", left, row + 8, panel, () -> { page = 1; rebuildWidgets(); });
             }
             case 5 -> button("Open Minecraft Key Binds…", left, row + 42, panel,
                     () -> minecraft.gui.setScreen(new KeyBindsScreen(this, minecraft.options)));
@@ -79,7 +102,7 @@ public final class AutoGambleSettingsScreen extends Screen {
     private void toggle(String label, BooleanSupplier get, Consumer<Boolean> set, String tip) {
         button(label + ": " + (get.getAsBoolean() ? "ON" : "OFF"), left, row, panel, () -> {
             set.accept(!get.getAsBoolean()); rebuildWidgets();
-        }).setTooltip(Tooltip.create(Component.literal(tip))); row += 24;
+        }).setTooltip(Tooltip.create(Component.literal(tip))); row += page == 1 ? 21 : 24;
     }
     private void number(Field field, String tooltip) {
         int fieldWidth = Math.min(130, panel / 3);
@@ -87,7 +110,7 @@ public final class AutoGambleSettingsScreen extends Screen {
         box.setMaxLength(32); box.setValue(draft.text(field));
         box.setTooltip(Tooltip.create(Component.literal(tooltip)));
         box.setResponder(value -> { draft.text(field, value); validateDraft(); });
-        fields.put(field, box); row += 24;
+        fields.put(field, box); row += page == 1 ? 21 : 24;
     }
     private void validateDraft() {
         var errors = draft.validate(); error = errors.isEmpty() ? "" : errors.getFirst();
@@ -114,11 +137,11 @@ public final class AutoGambleSettingsScreen extends Screen {
     @Override public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float delta) {
         super.extractRenderState(g, mx, my, delta);
         g.centeredText(font, title, width / 2, 15, 0xFFFFFFFF);
-        g.centeredText(font, "1.0.0  •  " + (draft.working.dryRunMode ? "DRY RUN — no real payments" : "REAL PAYMENTS") + "  •  Save to apply", width / 2, 30, draft.working.dryRunMode ? 0xFF99DDCC : 0xFFFFBB66);
+        g.centeredText(font, "1.0.5  •  " + (draft.working.dryRunMode ? "DRY RUN — no real payments" : "REAL PAYMENTS") + "  •  Save to apply", width / 2, 30, draft.working.dryRunMode ? 0xFF99DDCC : 0xFFFFBB66);
         fields.forEach((field, box) -> g.text(font, field.label, left, box.getY() + 6, 0xFFE0E0E0));
         if (page == 0) g.centeredText(font, font.plainSubstrByWidth(status, panel), width / 2, 178, 0xFFAAAAAA);
         if (page == 3) g.textWithWordWrap(font, Component.literal("Winners are paid one at a time. Disabling gambling clears pending payouts."), left, 132, panel, 0xFFAAAAAA);
-        if (page == 4) g.textWithWordWrap(font, Component.literal("Patterns stay in JSON. Import and test authentic messages before enabling live gambling."), left, 166, panel, 0xFFAAAAAA);
+        if (page == 4) g.textWithWordWrap(font, Component.literal("DonutSMP incoming payments are supported. Test messages in dry run before enabling real payments."), left, 166, panel, 0xFFAAAAAA);
         if (page == 5) {
             g.centeredText(font, "Toggle AutoGamble — default F8", width / 2, 80, 0xFFE0E0E0);
             g.centeredText(font, "Open Settings — default F9", width / 2, 97, 0xFFE0E0E0);

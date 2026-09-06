@@ -54,7 +54,7 @@ public final class ConfigManager {
                 for (String key : new String[]{"winnerDelayMinimumMs", "winnerDelayMaximumMs", "receiptDeduplicationWindowMs", "outgoingPaymentTrackingWindowMs"}) {
                     if (object.has(key)) object.get(key).getAsBigDecimal().longValueExact();
                 }
-                if (version > 3) {
+                if (version > 4) {
                     futureVersion = true;
                     config.enabled = false;
                     log.warn("[AutoGamble] Newer config version {}; using disabled defaults without overwriting", version);
@@ -75,7 +75,7 @@ public final class ConfigManager {
     private void migrate(JsonObject object, int version) {
         if (version < 0) throw new JsonParseException("Negative configVersion");
         // Version 0 means an unversioned file. Missing fields retain constructor defaults.
-        if (version <= 2) object.addProperty("configVersion", 3);
+        if (version <= 3) object.addProperty("configVersion", 4);
     }
     public void update(Consumer<AutoGambleConfig> editor) {
         if (futureVersion) {

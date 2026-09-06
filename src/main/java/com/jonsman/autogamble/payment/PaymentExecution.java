@@ -10,7 +10,7 @@ public final class PaymentExecution {
     public static PaymentSender.Result execute(boolean dryRun, String username, BigDecimal amount,
             OutgoingPaymentTracker.Source source, long now, long windowMs,
             OutgoingPaymentTracker tracker, Consumer<String> realCommand) {
-        if (username == null || !username.matches("[A-Za-z0-9_]{3,16}")) throw new IllegalArgumentException("Invalid target");
+        if (username == null || !username.matches("[A-Za-z0-9_]{2,16}")) throw new IllegalArgumentException("Invalid target");
         String formatted = AmountFormatter.format(amount);
         if (dryRun) {
             LoggerFactory.getLogger("autogamble").info("[AutoGamble] DRY RUN: Would pay {} ${} ({})", username, formatted, source);

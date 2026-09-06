@@ -13,6 +13,8 @@ public final class AutoPayManager {
     private final RandomGenerator playerRandom;
     private boolean running, emptyReported, invalidAmountReported;
     private Long nextPaymentNanos;
+    private String state = "INACTIVE";
+    public String state() { return state; }
     public AutoPayManager() { this(new java.util.Random(), new java.util.Random()); }
     public AutoPayManager(RandomGenerator delayRandom, RandomGenerator playerRandom) {
         this.delayRandom = delayRandom; this.playerRandom = playerRandom;
@@ -27,15 +29,16 @@ public final class AutoPayManager {
     }
     public boolean isDue(long nowNanos) { return nextPaymentNanos != null && nowNanos - nextPaymentNanos >= 0; }
     public void tick(long nowNanos, AutoGambleConfig config, AutoPayEnvironment environment, PlayerSelectionManager selection) {
-        if (!config.enabled || !config.autoPayEnabled || !environment.connected()) { reset(); return; }
+        if (!config.enabled || !config.autoPayEnabled || !environment.connected()) { environment.finishDiscovery(); reset(); return; }
         if (!running) {
-            running = true;
+            running = true; state = "WAITING";
             LOG.info("[AutoGamble] Auto-pay enabled");
             scheduleAfterPayment(nowNanos, config, delayRandom);
             return;
         }
         if (!isDue(nowNanos)) return;
-        if (environment.inputBlocked()) { nextPaymentNanos = nowNanos + 500_000_000L; return; }
+        if (environment.inputBlocked()) { state = "SCREEN_BLOCKED"; nextPaymentNanos = nowNanos + 500_000_000L; return; }
+        if (!environment.prepare(nowNanos)) { state = "DISCOVERING"; return; }
         try {
             String amount;
             try { amount = AmountFormatter.format(config.autoPayAmount); }
@@ -48,24 +51,26 @@ public final class AutoPayManager {
             var candidates = environment.eligiblePlayers();
             var target = selection.select(candidates, config.preferUnpaidPlayers, playerRandom);
             if (target.isEmpty()) {
-                if (!emptyReported) LOG.info("[AutoGamble] No eligible players found");
-                emptyReported = true;
+                if (!emptyReported) LOG.info("[AutoGamble] No valid Auto Pay player found after 10 random prefix attempts");
+                state = "NO_CANDIDATES"; emptyReported = true;
                 return;
             }
             emptyReported = false;
             if (environment.dispatch(target.get(), amount)) {
+                state = config.dryRunMode ? "SIMULATED" : "DISPATCHED";
                 selection.markPaid(target.get().username());
                 LOG.info("[AutoGamble] {} /pay {} {}", config.dryRunMode ? "DRY RUN simulated" : "Dispatched", target.get().username(), amount);
-            }
+            } else state = "DISPATCH_DEFERRED";
         } catch (RuntimeException e) {
             LOG.debug("[AutoGamble] Auto-pay attempt failed; waiting for next cycle", e);
         } finally {
+            environment.finishDiscovery();
             scheduleAfterPayment(nowNanos, config, delayRandom);
         }
     }
     public long remainingNanos(long now) { return nextPaymentNanos == null ? 0 : Math.max(0, nextPaymentNanos - now); }
     public void reset() {
         if (running) LOG.info("[AutoGamble] Auto-pay disabled");
-        running = false; nextPaymentNanos = null; emptyReported = false; invalidAmountReported = false;
+        state = "INACTIVE"; running = false; nextPaymentNanos = null; emptyReported = false; invalidAmountReported = false;
     }
 }
