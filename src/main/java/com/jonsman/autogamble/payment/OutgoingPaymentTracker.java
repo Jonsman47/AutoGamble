@@ -5,7 +5,7 @@ import java.util.*;
 
 /** Records all mod command attempts, including ambiguous failures, before calling the network API. */
 public final class OutgoingPaymentTracker {
-    public enum Source { ADVERTISING, GAMBLE_PAYOUT }
+    public enum Source { ADVERTISING, GAMBLE_PAYOUT, BALANCE_RULE }
     public record Outgoing(String username, BigDecimal amount, long timestamp, Source source) {}
     private final Deque<Outgoing> recent = new ArrayDeque<>();
     public boolean record(String username, BigDecimal amount, long now, Source source, long windowMs) {

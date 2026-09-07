@@ -2,7 +2,15 @@ package com.jonsman.autogamble.config;
 
 /** Mutable editing model; publish changes through ConfigManager.update on the client thread. */
 public final class AutoGambleConfig {
-    public int configVersion = 5;
+    public int configVersion = 6;
+    public boolean autoFollowGoodCustomersEnabled = false;
+    public java.math.BigDecimal autoFollowThreshold = new java.math.BigDecimal("5000000");
+    public boolean generatePaymentsToPlayersReport = true, generateTopCustomersReport = true, generateRecentPaymentsReport = true;
+    public boolean recentShowReceived = true, recentShowPaid = true, recentNewestFirst = true;
+    public java.math.BigDecimal recentMinimumAmount = java.math.BigDecimal.ZERO, recentMaximumAmount = null;
+    public int recentMaxLines = 1000, storedTransactionHistoryLimit = 10000;
+    public boolean automaticBalancePaymentsEnabled = false;
+    public java.util.List<BalanceRule> balancePaymentRules = new java.util.ArrayList<>();
     public boolean donutSmpIncomingEnabled = true;
     public static final String DEFAULT_SPAM_MESSAGE = "This is an automated message: Please do not spam payments to the gambling bot. Some payments may go unprocessed. Please wait 5-10 seconds between each payment.";
     public boolean spamPaymentWarningEnabled = true;
@@ -30,7 +38,15 @@ public final class AutoGambleConfig {
     public long winnerDelayMinimumMs = 200, winnerDelayMaximumMs = 700;
 
     public void validate() {
-        configVersion = 5;
+        configVersion = 6;
+        if (!MoneyValues.valid(autoFollowThreshold, false)) autoFollowThreshold = new java.math.BigDecimal("5000000");
+        if (!MoneyValues.valid(recentMinimumAmount, false)) recentMinimumAmount = java.math.BigDecimal.ZERO;
+        if (recentMaximumAmount != null && (!MoneyValues.valid(recentMaximumAmount, false) || recentMaximumAmount.compareTo(recentMinimumAmount) < 0)) recentMaximumAmount = null;
+        recentMaxLines = Math.clamp(recentMaxLines, 1, 100000);
+        storedTransactionHistoryLimit = Math.clamp(storedTransactionHistoryLimit, 100, 1000000);
+        if (balancePaymentRules == null) balancePaymentRules = new java.util.ArrayList<>();
+        var ruleIds = new java.util.HashSet<String>();
+        balancePaymentRules = new java.util.ArrayList<>(balancePaymentRules.stream().filter(rule -> rule != null && rule.valid() && ruleIds.add(rule.id)).limit(100).toList());
         spamPaymentThreshold = Math.clamp(spamPaymentThreshold, 2, 20);
         spamPaymentWindowSeconds = Math.clamp(spamPaymentWindowSeconds, 1, 60);
         spamWarningCooldownSeconds = Math.clamp(spamWarningCooldownSeconds, 5, 600);

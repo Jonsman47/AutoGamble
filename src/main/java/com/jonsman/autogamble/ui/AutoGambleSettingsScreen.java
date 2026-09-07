@@ -38,6 +38,7 @@ public final class AutoGambleSettingsScreen extends Screen {
                 toggle("AutoGamble Enabled", () -> draft.working.enabled, v -> draft.working.enabled = v, "Master switch for both payment systems.");
                 toggle("Auto Pay Enabled", () -> draft.working.autoPayEnabled, v -> draft.working.autoPayEnabled = v, "Pays random server-exposed players while enabled.");
                 toggle("Gambling Enabled", () -> draft.working.gambleEnabled, v -> draft.working.gambleEnabled = v, "Processes incoming bets only when a verified pattern matches.");
+                button("Customers, Reports & Balance…", left, row, panel, () -> minecraft.gui.setScreen(new AutomationSettingsScreen(this, context, draft)));
             }
             case 1 -> {
                 row = 70;
@@ -146,9 +147,9 @@ public final class AutoGambleSettingsScreen extends Screen {
     @Override public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float delta) {
         super.extractRenderState(g, mx, my, delta);
         g.centeredText(font, title, width / 2, 15, 0xFFFFFFFF);
-        g.centeredText(font, "1.1.0  •  " + (draft.working.dryRunMode ? "DRY RUN — no real payments" : "REAL PAYMENTS") + "  •  Save to apply", width / 2, 30, draft.working.dryRunMode ? 0xFF99DDCC : 0xFFFFBB66);
+        g.centeredText(font, "1.2.0  •  " + (draft.working.dryRunMode ? "DRY RUN — no real payments" : "REAL PAYMENTS") + "  •  Save to apply", width / 2, 30, draft.working.dryRunMode ? 0xFF99DDCC : 0xFFFFBB66);
         fields.forEach((field, box) -> g.text(font, field.label, left, box.getY() + 6, 0xFFE0E0E0));
-        if (page == 0) g.centeredText(font, font.plainSubstrByWidth(status, panel), width / 2, 178, 0xFFAAAAAA);
+        if (page == 0 && height > 300) g.centeredText(font, font.plainSubstrByWidth(status, panel), width / 2, 202, 0xFFAAAAAA);
         if (page == 3) g.textWithWordWrap(font, Component.literal("Winners are paid one at a time. Disabling gambling clears pending payouts."), left, 132, panel, 0xFFAAAAAA);
         if (page == 4 && height > 300) g.textWithWordWrap(font, Component.literal("DonutSMP incoming payments are supported. Test messages in dry run before enabling real payments."), left, 190, panel, 0xFFAAAAAA);
         if (page == 5) {

@@ -10,6 +10,11 @@ public final class PaymentExecution {
     public static PaymentSender.Result execute(boolean dryRun, String username, BigDecimal amount,
             OutgoingPaymentTracker.Source source, long now, long windowMs,
             OutgoingPaymentTracker tracker, Consumer<String> realCommand) {
+        return execute(dryRun, username, amount, source, now, windowMs, tracker, realCommand, () -> {});
+    }
+    public static PaymentSender.Result execute(boolean dryRun, String username, BigDecimal amount,
+            OutgoingPaymentTracker.Source source, long now, long windowMs,
+            OutgoingPaymentTracker tracker, Consumer<String> realCommand, Runnable recorded) {
         if (username == null || !username.matches("[A-Za-z0-9_]{2,16}")) throw new IllegalArgumentException("Invalid target");
         String formatted = AmountFormatter.format(amount);
         if (dryRun) {
@@ -17,10 +22,12 @@ public final class PaymentExecution {
             return PaymentSender.Result.SENT; // Advance simulated history/queue; never register imaginary outgoing money.
         }
         if (!tracker.record(username, new BigDecimal(formatted), now, source, windowMs)) return PaymentSender.Result.RETRY_LATER;
-        try { realCommand.accept("pay " + username + " " + formatted); return PaymentSender.Result.SENT; }
+        try { realCommand.accept("pay " + username + " " + formatted); }
         catch (RuntimeException e) {
             LoggerFactory.getLogger("autogamble").warn("[AutoGamble] Ambiguous dispatch; not retrying {} ${}", username, formatted, e);
             return PaymentSender.Result.UNCERTAIN;
         }
+        try { recorded.run(); } catch (RuntimeException ex) { LoggerFactory.getLogger("autogamble").error("[AutoGamble] Payment sent but history recording failed", ex); }
+        return PaymentSender.Result.SENT;
     }
 }

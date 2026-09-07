@@ -211,7 +211,7 @@ class GambleTest {
         Path path = directory.resolve("autogamble.json");
         Files.writeString(path, "{\"configVersion\":1,\"enabled\":false,\"autoPayEnabled\":true,\"autoPayAmount\":37,\"winChance\":0.55}");
         ConfigManager manager = new ConfigManager(path, org.slf4j.LoggerFactory.getLogger("test")); manager.load();
-        var c = manager.snapshot(); assertEquals(5, c.configVersion); assertFalse(c.enabled); assertTrue(c.autoPayEnabled);
+        var c = manager.snapshot(); assertEquals(6, c.configVersion); assertFalse(c.enabled); assertTrue(c.autoPayEnabled);
         assertEquals(37, c.autoPayAmount); assertEquals(.55, c.winChance); assertEquals(2000, c.receiptDeduplicationWindowMs);
         assertTrue(c.incomingPaymentPatterns.isEmpty());
         manager.update(edit -> edit.incomingPaymentPatterns.add(pattern(EXAMPLE))); manager.load();

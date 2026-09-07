@@ -13,6 +13,9 @@ public final class GambleManager {
     @FunctionalInterface public interface InvalidBetPolicy { void ignored(PaymentParser.IncomingPayment payment); }
     private static final Logger LOG = LoggerFactory.getLogger("autogamble");
     private PaymentParser parser;
+    private final ReceiptDeduplicator accountingReceipts = new ReceiptDeduplicator();
+    private java.util.function.Consumer<PaymentParser.IncomingPayment> receivedObserver = payment -> {};
+    public void receivedObserver(java.util.function.Consumer<PaymentParser.IncomingPayment> observer) { receivedObserver = observer; }
     public final PaymentSpamTracker spam = new PaymentSpamTracker();
     private com.jonsman.autogamble.config.PayerHistory history = new com.jonsman.autogamble.config.PayerHistory();
     public void history(com.jonsman.autogamble.config.PayerHistory history) { this.history = history; }
@@ -46,10 +49,11 @@ public final class GambleManager {
         if (!receipts.accept(payment, now, c.receiptDeduplicationWindowMs)) {
             LOG.debug("[AutoGamble] Duplicate receipt ignored"); return Outcome.DUPLICATE;
         }
-        if (!c.enabled || !c.gambleEnabled) return Outcome.IGNORED;
         if (outgoing.conflicts(payment, now, c.outgoingPaymentTrackingWindowMs)) {
             LOG.debug("[AutoGamble] Incoming candidate conflicts with tracked outgoing payment"); return Outcome.OUTGOING;
         }
+        if (accountingReceipts.accept(payment, now, c.receiptDeduplicationWindowMs)) receivedObserver.accept(payment);
+        if (!c.enabled || !c.gambleEnabled) return Outcome.IGNORED;
         spam.observe(payment.sender(), now, c);
         if (payment.amount().compareTo(BigDecimal.valueOf(c.minimumBet)) < 0
                 || payment.amount().compareTo(BigDecimal.valueOf(c.maximumBet)) > 0) {

@@ -6,6 +6,11 @@ import java.math.BigDecimal;
 /** Owns unsaved text, so tabs, resizing and child screens cannot discard edits. */
 public final class SettingsDraft {
     public enum Field {
+        FOLLOW_THRESHOLD("autoFollowThreshold", "Follow Threshold", false),
+        RECENT_MIN("recentMinimumAmount", "Minimum Amount", false),
+        RECENT_MAX("recentMaximumAmount", "Maximum (blank = unlimited)", false),
+        RECENT_LINES("recentMaxLines", "Maximum Lines", true),
+        HISTORY_LIMIT("storedTransactionHistoryLimit", "Stored History Limit", true),
         PREFIX_MIN("minimumPrefixLength", "Minimum Prefix Length", true),
         PREFIX_MAX("maximumPrefixLength", "Maximum Prefix Length", true),
         SPAM_THRESHOLD("spamPaymentThreshold", "Spam Payment Threshold", true),
@@ -29,7 +34,7 @@ public final class SettingsDraft {
     public SettingsDraft(AutoGambleConfig snapshot) {
         working = snapshot;
         for (Field f : Field.values()) {
-            try { text.put(f, new BigDecimal(AutoGambleConfig.class.getField(f.key).get(working).toString()).stripTrailingZeros().toPlainString()); }
+            try { Object value = AutoGambleConfig.class.getField(f.key).get(working); text.put(f, value == null ? "" : new BigDecimal(value.toString()).stripTrailingZeros().toPlainString()); }
             catch (ReflectiveOperationException e) { throw new IllegalStateException(e); }
         }
     }
@@ -40,6 +45,10 @@ public final class SettingsDraft {
         for (Field f : Field.values()) {
             String value = text.get(f).trim();
             try {
+                var moneyField = AutoGambleConfig.class.getField(f.key);
+                if (moneyField.getType() == BigDecimal.class) {
+                    moneyField.set(working, f == Field.RECENT_MAX && value.isBlank() ? null : MoneyValues.parse(value)); continue;
+                }
                 if (value.length() > 32 || !value.matches("[0-9]+(?:\\.[0-9]+)?")) throw new IllegalArgumentException();
                 BigDecimal n = new BigDecimal(value);
                 var property = AutoGambleConfig.class.getField(f.key);

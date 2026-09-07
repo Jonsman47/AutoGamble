@@ -11,6 +11,16 @@ import java.util.List;
 /** Uses the vanilla command API only; never constructs custom packets. */
 public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, PaymentSender {
     private final Minecraft client;
+    private com.jonsman.autogamble.history.PaymentHistory history;
+    private com.jonsman.autogamble.manager.KnownBalance balance;
+    public void history(com.jonsman.autogamble.history.PaymentHistory history, com.jonsman.autogamble.manager.KnownBalance balance) { this.history = history; this.balance = balance; }
+    public Result sendFollow(String username) {
+        var c = config.get();
+        if (!c.enabled || !c.autoFollowGoodCustomersEnabled || c.dryRunMode || !connected() || inputBlocked() || !client.isSameThread()
+                || username == null || !username.matches("[A-Za-z0-9_]{2,16}") || username.equalsIgnoreCase(client.player.getGameProfile().name()) || !gate.reserve()) return Result.RETRY_LATER;
+        try { client.getConnection().sendCommand("follow " + username); return Result.SENT; }
+        catch (RuntimeException ex) { LoggerFactory.getLogger("autogamble").warn("[AutoGamble] Ambiguous follow dispatch; suppressing retry", ex); return Result.UNCERTAIN; }
+    }
     private final PlayerSelectionManager selection;
     private final OutgoingPaymentTracker outgoing;
     private final java.util.function.Supplier<com.jonsman.autogamble.config.AutoGambleConfig> config;
@@ -35,7 +45,7 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
     @Override public void finishDiscovery() { discovery.cancel(); }
     public String playerSource() { return "RANDOM_PREFIX_SUGGESTIONS"; }
     public String discoveryStatus() {
-        return "Prefix Length Range: " + config.get().minimumPrefixLength + "–" + config.get().maximumPrefixLength
+        return "Prefix Length Range: " + config.get().minimumPrefixLength + "\u2013" + config.get().maximumPrefixLength
             + ", Last Prefix Length: " + discovery.lastLength() + ", Prefix Attempts This Cycle: " + discovery.attempts()
             + ", Last Auto Pay Prefix: " + discovery.prefix() + ", Last Candidate Count: " + discovery.count()
             + ", Last Selected Player: " + discovery.selected() + ", Numeric-Only Filter: "
@@ -109,12 +119,14 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
 
     @Override public Result sendPayment(String username, java.math.BigDecimal amount, OutgoingPaymentTracker.Source source) {
         var c = config.get();
-        if (!c.enabled || (source == OutgoingPaymentTracker.Source.ADVERTISING ? !c.autoPayEnabled : !c.gambleEnabled)
+        if (!c.enabled || (source == OutgoingPaymentTracker.Source.ADVERTISING ? !c.autoPayEnabled : source == OutgoingPaymentTracker.Source.BALANCE_RULE ? !c.automaticBalancePaymentsEnabled : !c.gambleEnabled)
                 || !connected() || inputBlocked() || !client.isSameThread()) return Result.RETRY_LATER;
         if (username == null || !username.matches("[A-Za-z0-9_]{2,16}")
                 || username.equalsIgnoreCase(client.player.getGameProfile().name())
                 || (source == OutgoingPaymentTracker.Source.ADVERTISING
                     && eligiblePlayers().stream().noneMatch(p -> p.username().equalsIgnoreCase(username)))) return Result.RETRY_LATER;
+        if (source == OutgoingPaymentTracker.Source.BALANCE_RULE && (balance == null || balance.current(System.nanoTime()) == null
+                || balance.current(System.nanoTime()).compareTo(amount) < 0)) return Result.RETRY_LATER;
         String formatted = AmountFormatter.format(amount);
         if (!gate.reserve()) return Result.RETRY_LATER;
         return PaymentExecution.execute(c.dryRunMode, username, new java.math.BigDecimal(formatted), source,
@@ -122,7 +134,7 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
                     failed.dispatched(username, source, System.nanoTime());
                     sendingPayment = true;
                     try { client.getConnection().sendCommand(command); }
-                    finally { sendingPayment = false; }
-                });
+                    finally { sendingPayment = false; if (balance != null) balance.invalidate(); }
+                }, () -> { if (history != null) history.record(com.jonsman.autogamble.history.PaymentHistory.Direction.PAID, username, new java.math.BigDecimal(formatted), source.name()); });
     }
 }

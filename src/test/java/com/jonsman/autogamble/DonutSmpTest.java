@@ -82,7 +82,7 @@ class DonutSmpTest {
         Path path = dir.resolve("autogamble.json");
         Files.writeString(path, "{\"configVersion\":3,\"autoPayAmount\":5,\"incomingPaymentPatterns\":[{\"enabled\":false,\"regex\":\"(?<sender>Bob) received (?<amount>[0-9]+)\"}]}");
         var m = new ConfigManager(path, org.slf4j.LoggerFactory.getLogger("test")); m.load();
-        var c = m.snapshot(); assertEquals(5, c.configVersion); assertEquals(5, c.autoPayAmount);
+        var c = m.snapshot(); assertEquals(6, c.configVersion); assertEquals(5, c.autoPayAmount);
         assertEquals(1, c.incomingPaymentPatterns.size()); assertFalse(c.incomingPaymentPatterns.getFirst().enabled);
         assertTrue(c.donutSmpIncomingEnabled); assertEquals(1, RegexPaymentParser.fromConfig(c).enabledCount());
         m.load(); assertEquals(1, m.snapshot().incomingPaymentPatterns.size());

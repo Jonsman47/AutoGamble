@@ -33,6 +33,10 @@ public final class AutoGambleClient implements ClientModInitializer {
     private final WinnerPayoutProcessor payouts = new WinnerPayoutProcessor(payments, new java.util.Random());
     private RegexPaymentParser parser;
     private final PlayerSelectionManager selection = new PlayerSelectionManager();
+    private com.jonsman.autogamble.history.PaymentHistory history;
+    private GoodCustomerFollow follow;
+    private BalanceRuleEngine balanceRules;
+    private final KnownBalance knownBalance = new KnownBalance();
     private ConfigManager configs;
     private PayerHistory payerHistory;
     private AutoGambleConfig activeConfig;
@@ -50,17 +54,23 @@ public final class AutoGambleClient implements ClientModInitializer {
         payerHistory = new PayerHistory(FabricLoader.getInstance().getConfigDir().resolve("autogamble-payers.json"));
         gamble.history(payerHistory);
         activeConfig = configs.snapshot();
+        var dataRoot = FabricLoader.getInstance().getConfigDir().resolve("autogamble");
+        history = new com.jonsman.autogamble.history.PaymentHistory(dataRoot, activeConfig);
+        follow = new GoodCustomerFollow(history);
+        balanceRules = new BalanceRuleEngine(dataRoot.resolve("data/balance_rule_state.json"));
+        gamble.receivedObserver(payment -> history.record(com.jonsman.autogamble.history.PaymentHistory.Direction.RECEIVED, payment.sender(), payment.amount(), "SERVER_PAYMENT"));
         refreshConfig();
         dispatcher = new MinecraftPaymentDispatcher(Minecraft.getInstance(), selection, outgoing, () -> activeConfig);
+        dispatcher.history(history, knownBalance);
         var category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("autogamble", "main"));
         toggle = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.autogamble.toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F8, category));
         settings = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.autogamble.settings", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F9, category));
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> resetSession());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> resetSession());
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> resetSession());
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> { resetSession(); history.close(); balanceRules.close(); });
         ClientSendMessageEvents.ALLOW_COMMAND.register(command ->
-                { dispatcher.manualCommand(); return !SettingsCommandRouter.intercept(command, () -> openSettingsRequested = true); });
+                { knownBalance.invalidate(); dispatcher.manualCommand(); return !SettingsCommandRouter.intercept(command, () -> openSettingsRequested = true); });
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> receive(message,
                 overlay ? ReceivedMessage.Channel.OVERLAY : ReceivedMessage.Channel.SYSTEM));
         ClientReceiveMessageEvents.CHAT.register((message, signed, sender, type, timestamp) -> receive(message,
@@ -69,6 +79,9 @@ public final class AutoGambleClient implements ClientModInitializer {
                 literal("autogamble").then(literal("settings").executes(context -> { openSettingsRequested = true; return 1; }))
                 .then(literal("debug").then(literal("on").executes(context -> { diagnostics = true; debugRemaining = 100; context.getSource().sendFeedback(Component.literal("[AutoGamble] Receive diagnostics ON (next 100 messages; logs/latest.log)")); return 1; }))
                         .then(literal("off").executes(context -> { diagnostics = false; return 1; })))
+                .then(literal("reports")
+                    .then(literal("refresh").executes(context -> { history.refresh(); context.getSource().sendFeedback(Component.literal("[AutoGamble] Enabled report refresh scheduled.")); return 1; }))
+                    .then(literal("status").executes(context -> { context.getSource().sendFeedback(Component.literal(reportStatus())); return 1; })))
                 .then(literal("status").executes(context -> {
                     var c = configs.snapshot();
                     context.getSource().sendFeedback(Component.literal(String.format(java.util.Locale.ROOT,
@@ -92,9 +105,10 @@ public final class AutoGambleClient implements ClientModInitializer {
                     context.getSource().sendFeedback(Component.literal("[AutoGamble] Spam Warning: " + (c.spamPaymentWarningEnabled ? "ON" : "OFF")
                             + ", Spam Threshold: " + c.spamPaymentThreshold + ", Spam Window: " + c.spamPaymentWindowSeconds
                             + "s, Warning Cooldown: " + c.spamWarningCooldownSeconds + "s, Tracked Recent Payers: " + gamble.spam.size()));
+                    context.getSource().sendFeedback(Component.literal(automationStatus()));
                     return 1;
                 }))));
-        LOGGER.info("[AutoGamble] 1.1.0 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
+        LOGGER.info("[AutoGamble] 1.2.0 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
     }
     private void receive(Component message, ReceivedMessage.Channel channel) {
         var client = Minecraft.getInstance();
@@ -114,6 +128,7 @@ public final class AutoGambleClient implements ClientModInitializer {
             var previous = activeConfig;
             activeConfig = configs.snapshot();
             configRevision = configs.revision();
+            if (history != null) history.configure(activeConfig);
             parser = RegexPaymentParser.fromConfig(activeConfig);
             gamble.parser(parser);
             if (!activeConfig.enabled || !activeConfig.gambleEnabled || !activeConfig.spamPaymentWarningEnabled
@@ -157,6 +172,9 @@ public final class AutoGambleClient implements ClientModInitializer {
         dispatcher.beginTick();
         payouts.tick(now, config, dispatcher);
         gamble.spam.tick(now, config, dispatcher::sendWarning);
+        follow.tick(config, now, dispatcher::sendFollow);
+        balanceRules.tick(config, knownBalance, now, System.currentTimeMillis(),
+                (player, amount) -> dispatcher.sendPayment(player, amount, OutgoingPaymentTracker.Source.BALANCE_RULE));
         autoPay.tick(now, config, dispatcher, selection);
     }
     private void cancelWork() { if (dispatcher != null) dispatcher.cancelDiscovery(); autoPay.reset(); payouts.cancel(); selection.reset(); }
@@ -165,8 +183,25 @@ public final class AutoGambleClient implements ClientModInitializer {
         var context = new SettingsContext(configs, this::refreshConfig, selection::reset,
                 () -> "Candidates: " + dispatcher.eligiblePlayers().size() + "  •  Paid: " + selection.paidUsernames().size()
                         + "  •  Payouts: " + payments.size() + "  •  Patterns: " + parser.enabledCount(),
-                () -> client.player == null ? "" : client.player.getGameProfile().name(), payerHistory::reset);
+                () -> client.player == null ? "" : client.player.getGameProfile().name(), payerHistory::reset, follow::clearHistory, this::automationStatus);
         client.gui.setScreen(new AutoGambleSettingsScreen(null, context));
     }
-    private void resetSession() { if (dispatcher != null) dispatcher.resetSession(); cancelWork(); gamble.reset(); lastConnection = null; lastWorld = null; }
+    private String automationStatus() {
+        var c = activeConfig; var data = history.snapshot();
+        return "[AutoGamble] Auto Follow Customers: " + (c.autoFollowGoodCustomersEnabled ? "ON" : "OFF")
+            + ", Follow Threshold: " + MoneyValues.display(c.autoFollowThreshold) + ", Followed Players: " + data.followed().size()
+            + "\nAutomatic Balance Payments: " + (c.automaticBalancePaymentsEnabled ? "ON" : "OFF")
+            + ", Configured Balance Rules: " + c.balancePaymentRules.size() + ", Enabled Balance Rules: " + c.balancePaymentRules.stream().filter(r -> r.enabled).count()
+            + ", Current Known Balance: " + MoneyValues.display(knownBalance.current(System.nanoTime()))
+            + "\nBalance source: " + knownBalance.source() + (data.error().isEmpty() ? "" : "\nData warning: " + data.error());
+    }
+    private String reportStatus() {
+        var c = activeConfig; var data = history.snapshot();
+        return "[AutoGamble] Reports: " + history.reports().toAbsolutePath()
+            + "\nPayments-To-Players: " + c.generatePaymentsToPlayersReport + ", Top-Customers: " + c.generateTopCustomersReport
+            + ", Recent-Payments: " + c.generateRecentPaymentsReport + "\nStored transactions: " + data.stored()
+            + ", Received players: " + data.receivedPlayers() + ", Paid players: " + data.paidPlayers()
+            + (data.error().isEmpty() ? "" : "\nData warning: " + data.error());
+    }
+    private void resetSession() { knownBalance.invalidate(); if (follow != null) follow.resetSession(); if (dispatcher != null) dispatcher.resetSession(); cancelWork(); gamble.reset(); lastConnection = null; lastWorld = null; }
 }

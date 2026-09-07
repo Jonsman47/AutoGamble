@@ -7,6 +7,17 @@ public final class SettingsValidation {
     private SettingsValidation() {}
     public static List<String> errors(AutoGambleConfig c) {
         List<String> errors = new ArrayList<>();
+        if (!MoneyValues.valid(c.autoFollowThreshold, false)) errors.add("Follow Threshold must be at least zero.");
+        if (!MoneyValues.valid(c.recentMinimumAmount, false)) errors.add("Recent Minimum Amount must be at least zero.");
+        if (c.recentMaximumAmount != null && (!MoneyValues.valid(c.recentMaximumAmount, false)
+                || c.recentMinimumAmount != null && c.recentMaximumAmount.compareTo(c.recentMinimumAmount) < 0)) errors.add("Recent Maximum Amount must be at least the minimum, or blank for unlimited.");
+        range(errors, "Maximum Lines", c.recentMaxLines, 1, 100000);
+        range(errors, "Stored Transaction History Limit", c.storedTransactionHistoryLimit, 100, 1000000);
+        if (c.balancePaymentRules == null || c.balancePaymentRules.size() > 100) errors.add("Use at most 100 balance rules.");
+        else {
+            var ids = new java.util.HashSet<String>();
+            for (var rule : c.balancePaymentRules) if (rule == null || !rule.valid() || !ids.add(rule.id)) errors.add("Invalid or duplicate balance rule.");
+        }
         range(errors, "Minimum Prefix Length", c.minimumPrefixLength, 1, 3);
         range(errors, "Maximum Prefix Length", c.maximumPrefixLength, c.minimumPrefixLength, 3);
         range(errors, "Auto Pay Amount", c.autoPayAmount, .01, 1e9);
