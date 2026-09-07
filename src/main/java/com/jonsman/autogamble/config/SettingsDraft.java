@@ -11,6 +11,8 @@ public final class SettingsDraft {
         RECENT_MAX("recentMaximumAmount", "Maximum (blank = unlimited)", false),
         RECENT_LINES("recentMaxLines", "Maximum Lines", true),
         HISTORY_LIMIT("storedTransactionHistoryLimit", "Stored History Limit", true),
+        CONVERSION_WINDOW("autoPayConversionWindowSeconds", "Conversion Window (s)", true),
+        ATTRIBUTION_DURATION("autoPayAttributionDurationSeconds", "Attribution Duration (s)", true),
         PREFIX_MIN("minimumPrefixLength", "Minimum Prefix Length", true),
         PREFIX_MAX("maximumPrefixLength", "Maximum Prefix Length", true),
         SPAM_THRESHOLD("spamPaymentThreshold", "Spam Payment Threshold", true),

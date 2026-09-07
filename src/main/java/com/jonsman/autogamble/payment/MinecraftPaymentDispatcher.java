@@ -12,8 +12,10 @@ import java.util.List;
 public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, PaymentSender {
     private final Minecraft client;
     private com.jonsman.autogamble.history.PaymentHistory history;
+    private com.jonsman.autogamble.history.AnalyticsEngine analytics;
     private com.jonsman.autogamble.manager.KnownBalance balance;
     public void history(com.jonsman.autogamble.history.PaymentHistory history, com.jonsman.autogamble.manager.KnownBalance balance) { this.history = history; this.balance = balance; }
+    public void analytics(com.jonsman.autogamble.history.AnalyticsEngine analytics) { this.analytics = analytics; }
     public Result sendFollow(String username) {
         var c = config.get();
         if (!c.enabled || !c.autoFollowGoodCustomersEnabled || c.dryRunMode || !connected() || inputBlocked() || !client.isSameThread()
@@ -135,6 +137,10 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
                     sendingPayment = true;
                     try { client.getConnection().sendCommand(command); }
                     finally { sendingPayment = false; if (balance != null) balance.invalidate(); }
-                }, () -> { if (history != null) history.record(com.jonsman.autogamble.history.PaymentHistory.Direction.PAID, username, new java.math.BigDecimal(formatted), source.name()); });
+                }, () -> {
+                    var paidAmount = new java.math.BigDecimal(formatted);
+                    if (history != null) history.record(com.jonsman.autogamble.history.PaymentHistory.Direction.PAID, username, paidAmount, source.name());
+                    if (analytics != null) analytics.outgoing(username, paidAmount, source, System.currentTimeMillis());
+                });
     }
 }

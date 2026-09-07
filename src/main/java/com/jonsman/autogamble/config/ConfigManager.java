@@ -37,6 +37,21 @@ public final class ConfigManager {
                         if (!value.isJsonArray()) throw new JsonParseException("Rules must be an array");
                         continue;
                     }
+                    if (entry.getKey().equals("paymentAlertTiers")) {
+                        if (!value.isJsonArray()) throw new JsonParseException("Alert tiers must be an array");
+                        for (JsonElement item : value.getAsJsonArray()) {
+                            if (!item.isJsonObject()) throw new JsonParseException("Alert tier must be an object");
+                            JsonObject tier = item.getAsJsonObject();
+                            if (!tier.has("enabled") || !tier.getAsJsonPrimitive("enabled").isBoolean()
+                                    || !tier.has("threshold") || !tier.get("threshold").isJsonPrimitive()
+                                    || !tier.has("sound") || !tier.getAsJsonPrimitive("sound").isString()
+                                    || !tier.has("volume") || !tier.getAsJsonPrimitive("volume").isNumber()
+                                    || !tier.has("pitch") || !tier.getAsJsonPrimitive("pitch").isNumber())
+                                throw new JsonParseException("Invalid alert tier");
+                            MoneyValues.parse(tier.get("threshold").getAsString());
+                        }
+                        continue;
+                    }
                     if (entry.getKey().equals("incomingPaymentPatterns")) {
                         if (!value.isJsonArray()) throw new JsonParseException("Patterns must be an array");
                         for (JsonElement item : value.getAsJsonArray()) {
@@ -58,10 +73,10 @@ public final class ConfigManager {
                         throw new JsonParseException("Wrong type: " + entry.getKey());
                 }
                 int version = object.has("configVersion") ? object.get("configVersion").getAsBigDecimal().intValueExact() : 0;
-                for (String key : new String[]{"recentMaxLines", "storedTransactionHistoryLimit", "spamPaymentThreshold", "spamPaymentWindowSeconds", "spamWarningCooldownSeconds", "minimumPrefixLength", "maximumPrefixLength", "winnerDelayMinimumMs", "winnerDelayMaximumMs", "receiptDeduplicationWindowMs", "outgoingPaymentTrackingWindowMs"}) {
+                for (String key : new String[]{"recentMaxLines", "storedTransactionHistoryLimit", "spamPaymentThreshold", "spamPaymentWindowSeconds", "spamWarningCooldownSeconds", "minimumPrefixLength", "maximumPrefixLength", "winnerDelayMinimumMs", "winnerDelayMaximumMs", "receiptDeduplicationWindowMs", "outgoingPaymentTrackingWindowMs", "minimumAlertSpacingMs", "autoPayConversionWindowSeconds", "autoPayAttributionDurationSeconds"}) {
                     if (object.has(key)) object.get(key).getAsBigDecimal().longValueExact();
                 }
-                if (version > 6) {
+                if (version > 7) {
                     futureVersion = true;
                     config.enabled = false;
                     log.warn("[AutoGamble] Newer config version {}; using disabled defaults without overwriting", version);
@@ -82,7 +97,7 @@ public final class ConfigManager {
     private void migrate(JsonObject object, int version) {
         if (version < 0) throw new JsonParseException("Negative configVersion");
         // Version 0 means an unversioned file. Missing fields retain constructor defaults.
-        if (version <= 5) object.addProperty("configVersion", 6);
+        if (version <= 6) object.addProperty("configVersion", 7);
     }
     public void update(Consumer<AutoGambleConfig> editor) {
         if (futureVersion) {

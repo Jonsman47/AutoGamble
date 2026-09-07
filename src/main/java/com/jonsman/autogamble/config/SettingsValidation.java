@@ -7,6 +7,16 @@ public final class SettingsValidation {
     private SettingsValidation() {}
     public static List<String> errors(AutoGambleConfig c) {
         List<String> errors = new ArrayList<>();
+        range(errors, "Minimum Alert Spacing", c.minimumAlertSpacingMs, 0, 5000);
+        range(errors, "Auto-Pay Conversion Window", c.autoPayConversionWindowSeconds, 0, 86400);
+        range(errors, "Auto-Pay Attribution Duration", c.autoPayAttributionDurationSeconds, 0, 86400);
+        if (c.paymentAlertTiers == null || c.paymentAlertTiers.size() != 5) errors.add("Exactly five payment alert tiers are required.");
+        else for (PaymentAlertTier tier : c.paymentAlertTiers) {
+            if (tier == null || !MoneyValues.valid(tier.threshold, false)) errors.add("Payment alert thresholds must be valid non-negative amounts.");
+            else if (tier.sound == null || !tier.sound.matches("[a-z0-9_.-]+:[a-z0-9_/.-]+")) errors.add("Payment alert sound IDs must be namespaced.");
+            else if (!Float.isFinite(tier.volume) || tier.volume < 0 || tier.volume > 4 || !Float.isFinite(tier.pitch) || tier.pitch < .5 || tier.pitch > 2)
+                errors.add("Payment alert volume or pitch is outside its allowed range.");
+        }
         if (!MoneyValues.valid(c.autoFollowThreshold, false)) errors.add("Follow Threshold must be at least zero.");
         if (!MoneyValues.valid(c.recentMinimumAmount, false)) errors.add("Recent Minimum Amount must be at least zero.");
         if (c.recentMaximumAmount != null && (!MoneyValues.valid(c.recentMaximumAmount, false)

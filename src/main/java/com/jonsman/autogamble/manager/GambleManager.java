@@ -11,11 +11,16 @@ import org.slf4j.LoggerFactory;
 public final class GambleManager {
     public enum Outcome { IGNORED, DUPLICATE, OUTGOING, INVALID, CAPACITY, LOSS, WIN }
     @FunctionalInterface public interface InvalidBetPolicy { void ignored(PaymentParser.IncomingPayment payment); }
+    @FunctionalInterface public interface AcceptedObserver {
+        void accepted(PaymentParser.IncomingPayment payment, boolean firstEver, boolean won, BigDecimal payout, long now, AutoGambleConfig config);
+    }
     private static final Logger LOG = LoggerFactory.getLogger("autogamble");
     private PaymentParser parser;
     private final ReceiptDeduplicator accountingReceipts = new ReceiptDeduplicator();
     private java.util.function.Consumer<PaymentParser.IncomingPayment> receivedObserver = payment -> {};
+    private AcceptedObserver acceptedObserver = (payment, first, won, payout, now, config) -> {};
     public void receivedObserver(java.util.function.Consumer<PaymentParser.IncomingPayment> observer) { receivedObserver = observer; }
+    public void acceptedObserver(AcceptedObserver observer) { acceptedObserver = observer; }
     public final PaymentSpamTracker spam = new PaymentSpamTracker();
     private com.jonsman.autogamble.config.PayerHistory history = new com.jonsman.autogamble.config.PayerHistory();
     public void history(com.jonsman.autogamble.config.PayerHistory history) { this.history = history; }
@@ -75,6 +80,7 @@ public final class GambleManager {
                 first && c.firstTimePayerBonusEnabled ? c.firstTimeWinBonus * 100 : 0, chance * 100);
         boolean wins = random.nextDouble() < chance;
         if (first) history.add(payment.sender());
+        acceptedObserver.accepted(payment, first, wins, payout, now, c);
         if (!wins) { LOG.info("[AutoGamble] {}{} lost", mode, payment.sender()); return Outcome.LOSS; }
         queue.offer(new PaymentQueue.Payment(payment.sender(), payout, PaymentQueue.Purpose.WINNER_PAYOUT, now));
         LOG.info("[AutoGamble] {}{} WON -> {}pay ${}", mode, payment.sender(), c.dryRunMode ? "would " : "", AmountFormatter.format(payout));

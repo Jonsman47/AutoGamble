@@ -47,6 +47,7 @@ public final class AutomationSettingsScreen extends Screen {
                 button("Good Customer Follow", row, () -> navigate(1));
                 button("Payment Report Files", row+28, () -> navigate(2));
                 button("Balance Payment Rules", row+56, () -> navigate(5));
+                button("Auto-Pay Attribution", row+84, () -> navigate(7));
             }
             case 1 -> {
                 toggle("Auto Follow Good Customers", () -> c.autoFollowGoodCustomersEnabled, v -> c.autoFollowGoodCustomersEnabled = v,
@@ -96,6 +97,10 @@ public final class AutomationSettingsScreen extends Screen {
                 text("Payment Amount", amount, v -> amount=v, "Positive amount, e.g. 200M.");
                 text("Cooldown (seconds)", cooldown, v -> cooldown=v, "0–86400 seconds; also requires falling below threshold to re-arm.");
             }
+            case 7 -> {
+                money(SettingsDraft.Field.CONVERSION_WINDOW, "Seconds after an advertising payment during which the same player's next payment converts.");
+                money(SettingsDraft.Field.ATTRIBUTION_DURATION, "Seconds after conversion during which that player's revenue and profit remain attributed.");
+            }
         }
         save = button(page == 6 ? "Apply Rule" : "Save & Done", left, height-28, panel/2-3, page == 6 ? this::applyRule : this::save);
         button(page == 6 ? "Cancel" : "Back", left+panel/2+3, height-28, panel/2-3, () -> {
@@ -140,7 +145,7 @@ public final class AutomationSettingsScreen extends Screen {
     @Override public void onClose() { minecraft.gui.setScreen(parent); }
     @Override public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float delta) {
         super.extractRenderState(g,mx,my,delta);
-        String[] titles={"Customers, Reports & Balance", "Good Customer Follow", "Payment Report Files", "Recent Payment Filters", "Order, Lines & Stored History", "Balance Payment Rules", "Edit Balance Rule"};
+        String[] titles={"Customers, Reports & Balance", "Good Customer Follow", "Payment Report Files", "Recent Payment Filters", "Order, Lines & Stored History", "Balance Payment Rules", "Edit Balance Rule", "Auto-Pay Attribution"};
         g.centeredText(font, Component.literal(titles[page]), width/2, 15, 0xFFFFFFFF);
         String hint=page==5 ? "Balance: UNKNOWN — no verified DonutSMP source" : "Save to apply • Back preserves your draft";
         g.centeredText(font, font.plainSubstrByWidth(hint,panel),width/2,34,0xFFAAAAAA);

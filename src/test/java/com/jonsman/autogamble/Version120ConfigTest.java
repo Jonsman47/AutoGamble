@@ -16,7 +16,7 @@ class Version120ConfigTest {
              "spamPaymentThreshold":7,"spamWarningMessage":"Please wait!","autoPayAmount":19,"minimumPrefixLength":2,
              "incomingPaymentPatterns":[{"enabled":false,"regex":"(?<sender>Bob) paid (?<amount>[0-9]+)"}]}
             """);
-        var m=manager();m.load();var c=m.snapshot(); assertEquals(6,c.configVersion); assertFalse(c.dryRunMode);
+        var m=manager();m.load();var c=m.snapshot(); assertEquals(7,c.configVersion); assertFalse(c.dryRunMode);
         assertTrue(c.gambleEnabled);assertEquals(.37,c.winChance);assertEquals(.23,c.firstTimeWinBonus);
         assertEquals(7,c.spamPaymentThreshold);assertEquals("Please wait!",c.spamWarningMessage);assertEquals(19,c.autoPayAmount);
         assertEquals(2,c.minimumPrefixLength);assertEquals(1,c.incomingPaymentPatterns.size());

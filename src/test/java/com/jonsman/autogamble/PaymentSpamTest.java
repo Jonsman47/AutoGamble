@@ -67,7 +67,7 @@ class PaymentSpamTest {
         Path file = dir.resolve("autogamble.json");
         Files.writeString(file, "{\"configVersion\":4,\"autoPayAmount\":27.5,\"dryRunMode\":false}");
         var m = new ConfigManager(file, org.slf4j.LoggerFactory.getLogger("test")); m.load();
-        var c = m.snapshot(); assertEquals(6, c.configVersion); assertEquals(27.5, c.autoPayAmount);
+        var c = m.snapshot(); assertEquals(7, c.configVersion); assertEquals(27.5, c.autoPayAmount);
         assertFalse(c.dryRunMode); assertTrue(c.spamPaymentWarningEnabled);
         assertEquals(3, c.spamPaymentThreshold); assertEquals(10, c.spamPaymentWindowSeconds); assertEquals(60, c.spamWarningCooldownSeconds);
         m.update(next -> next.spamWarningMessage = "Please wait."); m.load();

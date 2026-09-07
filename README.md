@@ -6,7 +6,7 @@ A client-side Fabric mod for DonutSMP with automatic payments, configurable gamb
 
 Requires **Minecraft 26.2**, **Java 25**, **Fabric Loader 0.19.3**, and **Fabric API 0.159.0+26.2**.
 
-1. Download **autogamble-1.2.0.jar** from [the repository](https://github.com/Jonsman47/AutoGamble/raw/refs/heads/main/releases/autogamble-1.2.0.jar), or build it locally.
+1. Download **autogamble-1.2.1.jar** from [the repository](https://github.com/Jonsman47/AutoGamble/raw/refs/heads/main/releases/autogamble-1.2.1.jar), or build it locally.
 2. Put it and Fabric API in your Minecraft `mods` folder. Remove older AutoGamble JARs.
 3. Launch Minecraft and press **F9** to configure it.
 
@@ -14,7 +14,7 @@ Requires **Minecraft 26.2**, **Java 25**, **Fabric Loader 0.19.3**, and **Fabric
 
 ## Features
 
-- **Auto Pay:** searches `/pay` autocomplete using random 1â€“3 letter prefixes, then randomly chooses a valid player. Configurable amount and delay, unpaid-player preference, numeric-name filter, and temporary failed-target blacklist.
+- **Auto Pay:** searches `/pay` autocomplete using random 1–3 letter prefixes, then randomly chooses a valid player. Configurable amount and delay, unpaid-player preference, numeric-name filter, and temporary failed-target blacklist.
 - **Gambling:** recognizes incoming notices such as `Bob paid you $ 19.8k`. Supports K/M/B/T amounts, configurable win chance, bet limits, payout multiplier, and queued payouts.
 - **First-time bonus:** ON by default, adding **10 percentage points** to a player's first accepted bet, capped at 100%. Payer history persists across restarts. Accepted Dry Run bets also consume the bonus.
 
@@ -23,8 +23,11 @@ Requires **Minecraft 26.2**, **Java 25**, **Fabric Loader 0.19.3**, and **Fabric
 - **Good Customer Follow:** OFF by default. Once a customer has paid a cumulative **5M** (configurable), dispatches `/follow` once and persists their identity. Dry Run only logs; it never adds a simulated follow to the permanent list.
 - **Payment reports:** automatically writes received totals, paid totals and filtered recent transactions to UTF-8 text files. Reports and retained history persist across restarts. Filters never delete the underlying retained transactions.
 - **Balance Payment Rules:** OFF by default, with no preset rules. Includes multiple rule editors, threshold re-arming, cooldowns and known-balance checks. **Live triggering is unavailable until a verified DonutSMP balance source is connected. Current balance stays UNKNOWN; no value is inferred from payment arithmetic.**
+- **Payment sound alerts:** ON by default. Five independently configurable tiers start at 20M, 50M, 100M, 250M and 500M. Only the highest matching tier plays for a validated incoming payment.
+- **Analytics:** four in-game pages show current-session results, theoretical EV, persistent customer profitability, and session/lifetime Auto-Pay ROI. Auto-Pay attribution uses configurable last-touch conversion and attribution windows.
+- **Local command help:** `/help gamble` and `/help gamble <page>` show the complete AutoGamble command registry without sending the command to the server.
 
-Open **General → Customers, Reports & Balance…** for the new settings. See [the v1.2.0 guide](docs/PATCH-1.2.0.md) for paths, settings and verification.
+Open **General** for automation, sound, and analytics pages. See [the v1.2.1 guide](docs/PATCH-1.2.1.md) for the new settings and data path.
 
 ## Controls
 
@@ -36,8 +39,9 @@ Open **General → Customers, Reports & Balance…** for the new settings. See [
 | `/autogamble reports refresh` | Schedule a refresh of enabled report files |
 | `/autogamble reports status` | Show report path, toggles and stored data counts |
 | `/autogamble debug on` / `off` | Toggle receive diagnostics |
+| `/help gamble [page]` | Show paginated AutoGamble command help locally |
 
-Rebind keys in Minecraft's **Options â†’ Controls â†’ Key Binds**. Settings apply with **Save & Done**.
+Rebind keys in Minecraft's **Options → Controls → Key Binds**. Settings apply with **Save & Done**.
 
 Config: `config/autogamble.json`  
 Payer history: `config/autogamble-payers.json`
@@ -46,4 +50,4 @@ Payer history: `config/autogamble-payers.json`
 
 With Java 25, run `gradlew.bat test` then `gradlew.bat build` (Linux/macOS: `sh gradlew`).
 
-Version **1.2.0** builds on the recovered v1.1.0 project. The original v1.1.0 JAR remains preserved in `releases/`. New builds go to `build/libs/`. See [v1.2.0 notes](docs/PATCH-1.2.0.md) and [v1.1.0 recovery notes](docs/PATCH-1.1.0.md).
+Version **1.2.1** builds on v1.2.0. Earlier release JARs remain preserved under `releases/`. New builds go to `build/libs/`. See [v1.2.1 notes](docs/PATCH-1.2.1.md), [v1.2.0 notes](docs/PATCH-1.2.0.md), and [v1.1.0 recovery notes](docs/PATCH-1.1.0.md).

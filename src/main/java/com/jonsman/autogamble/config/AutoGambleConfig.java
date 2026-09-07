@@ -2,7 +2,12 @@ package com.jonsman.autogamble.config;
 
 /** Mutable editing model; publish changes through ConfigManager.update on the client thread. */
 public final class AutoGambleConfig {
-    public int configVersion = 6;
+    public int configVersion = 7;
+    public boolean paymentSoundAlertsEnabled = true;
+    public int minimumAlertSpacingMs = 250;
+    public java.util.List<PaymentAlertTier> paymentAlertTiers = defaultPaymentAlertTiers();
+    public int autoPayConversionWindowSeconds = 1800;
+    public int autoPayAttributionDurationSeconds = 1800;
     public boolean autoFollowGoodCustomersEnabled = false;
     public java.math.BigDecimal autoFollowThreshold = new java.math.BigDecimal("5000000");
     public boolean generatePaymentsToPlayersReport = true, generateTopCustomersReport = true, generateRecentPaymentsReport = true;
@@ -38,7 +43,24 @@ public final class AutoGambleConfig {
     public long winnerDelayMinimumMs = 200, winnerDelayMaximumMs = 700;
 
     public void validate() {
-        configVersion = 6;
+        configVersion = 7;
+        minimumAlertSpacingMs = Math.clamp(minimumAlertSpacingMs, 0, 5000);
+        autoPayConversionWindowSeconds = Math.clamp(autoPayConversionWindowSeconds, 0, 86400);
+        autoPayAttributionDurationSeconds = Math.clamp(autoPayAttributionDurationSeconds, 0, 86400);
+        if (paymentAlertTiers == null || paymentAlertTiers.size() != 5) paymentAlertTiers = defaultPaymentAlertTiers();
+        else {
+            var defaults = defaultPaymentAlertTiers();
+            for (int i = 0; i < paymentAlertTiers.size(); i++) {
+                PaymentAlertTier tier = paymentAlertTiers.get(i), fallback = defaults.get(i);
+                if (tier == null) { paymentAlertTiers.set(i, fallback); continue; }
+                if (!MoneyValues.valid(tier.threshold, false)) tier.threshold = fallback.threshold;
+                if (tier.sound == null || !tier.sound.matches("[a-z0-9_.-]+:[a-z0-9_/.-]+")) tier.sound = fallback.sound;
+                if (!Float.isFinite(tier.volume)) tier.volume = fallback.volume;
+                if (!Float.isFinite(tier.pitch)) tier.pitch = fallback.pitch;
+                tier.volume = Math.clamp(tier.volume, 0.0f, 4.0f);
+                tier.pitch = Math.clamp(tier.pitch, 0.5f, 2.0f);
+            }
+        }
         if (!MoneyValues.valid(autoFollowThreshold, false)) autoFollowThreshold = new java.math.BigDecimal("5000000");
         if (!MoneyValues.valid(recentMinimumAmount, false)) recentMinimumAmount = java.math.BigDecimal.ZERO;
         if (recentMaximumAmount != null && (!MoneyValues.valid(recentMaximumAmount, false) || recentMaximumAmount.compareTo(recentMinimumAmount) < 0)) recentMaximumAmount = null;
@@ -72,5 +94,13 @@ public final class AutoGambleConfig {
     }
     private static double bounded(double value, double fallback, double min, double max) {
         return Double.isFinite(value) ? Math.clamp(value, min, max) : fallback;
+    }
+    public static java.util.List<PaymentAlertTier> defaultPaymentAlertTiers() {
+        return new java.util.ArrayList<>(java.util.List.of(
+                new PaymentAlertTier(true, "20000000", "minecraft:block.note_block.bell", 1.0f, 1.0f),
+                new PaymentAlertTier(true, "50000000", "minecraft:entity.experience_orb.pickup", 1.0f, 1.0f),
+                new PaymentAlertTier(true, "100000000", "minecraft:entity.player.levelup", 1.0f, 1.0f),
+                new PaymentAlertTier(true, "250000000", "minecraft:item.totem.use", 1.0f, 1.0f),
+                new PaymentAlertTier(true, "500000000", "minecraft:entity.ender_dragon.death", 1.0f, 1.0f)));
     }
 }

@@ -14,6 +14,7 @@ import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
+import net.minecraft.core.registries.BuiltInRegistries;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -34,6 +35,9 @@ public final class AutoGambleClient implements ClientModInitializer {
     private RegexPaymentParser parser;
     private final PlayerSelectionManager selection = new PlayerSelectionManager();
     private com.jonsman.autogamble.history.PaymentHistory history;
+    private com.jonsman.autogamble.history.AnalyticsEngine analytics;
+    private final PaymentSoundAlerts soundAlerts = new PaymentSoundAlerts();
+    private final HelpCommandRouter help = new HelpCommandRouter();
     private GoodCustomerFollow follow;
     private BalanceRuleEngine balanceRules;
     private final KnownBalance knownBalance = new KnownBalance();
@@ -56,21 +60,33 @@ public final class AutoGambleClient implements ClientModInitializer {
         activeConfig = configs.snapshot();
         var dataRoot = FabricLoader.getInstance().getConfigDir().resolve("autogamble");
         history = new com.jonsman.autogamble.history.PaymentHistory(dataRoot, activeConfig);
+        analytics = new com.jonsman.autogamble.history.AnalyticsEngine(dataRoot.resolve("data/analytics.json"), LOGGER);
         follow = new GoodCustomerFollow(history);
         balanceRules = new BalanceRuleEngine(dataRoot.resolve("data/balance_rule_state.json"));
-        gamble.receivedObserver(payment -> history.record(com.jonsman.autogamble.history.PaymentHistory.Direction.RECEIVED, payment.sender(), payment.amount(), "SERVER_PAYMENT"));
+        gamble.receivedObserver(payment -> {
+            history.record(com.jonsman.autogamble.history.PaymentHistory.Direction.RECEIVED, payment.sender(), payment.amount(), "SERVER_PAYMENT");
+            analytics.incoming(payment.sender(), payment.amount(), System.currentTimeMillis(), activeConfig);
+            soundAlerts.select(payment.amount(), System.currentTimeMillis(), activeConfig).ifPresent(this::playPaymentSound);
+        });
+        gamble.acceptedObserver((payment, first, won, payout, now, config) ->
+                analytics.acceptedGamble(payment.sender(), payment.amount(), first, won, payout, System.currentTimeMillis(), config));
         refreshConfig();
         dispatcher = new MinecraftPaymentDispatcher(Minecraft.getInstance(), selection, outgoing, () -> activeConfig);
         dispatcher.history(history, knownBalance);
+        dispatcher.analytics(analytics);
         var category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("autogamble", "main"));
         toggle = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.autogamble.toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F8, category));
         settings = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.autogamble.settings", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F9, category));
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> resetSession());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> resetSession());
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> { resetSession(); history.close(); balanceRules.close(); });
-        ClientSendMessageEvents.ALLOW_COMMAND.register(command ->
-                { knownBalance.invalidate(); dispatcher.manualCommand(); return !SettingsCommandRouter.intercept(command, () -> openSettingsRequested = true); });
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> { resetSession(); analytics.close(); history.close(); balanceRules.close(); });
+        ClientSendMessageEvents.ALLOW_COMMAND.register(command -> {
+            var client = Minecraft.getInstance();
+            if (help.intercept(command, text -> { if (client.player != null) client.player.sendSystemMessage(Component.literal(text)); })) return false;
+            knownBalance.invalidate(); dispatcher.manualCommand();
+            return !SettingsCommandRouter.intercept(command, () -> openSettingsRequested = true);
+        });
         ClientReceiveMessageEvents.GAME.register((message, overlay) -> receive(message,
                 overlay ? ReceivedMessage.Channel.OVERLAY : ReceivedMessage.Channel.SYSTEM));
         ClientReceiveMessageEvents.CHAT.register((message, signed, sender, type, timestamp) -> receive(message,
@@ -106,9 +122,13 @@ public final class AutoGambleClient implements ClientModInitializer {
                             + ", Spam Threshold: " + c.spamPaymentThreshold + ", Spam Window: " + c.spamPaymentWindowSeconds
                             + "s, Warning Cooldown: " + c.spamWarningCooldownSeconds + "s, Tracked Recent Payers: " + gamble.spam.size()));
                     context.getSource().sendFeedback(Component.literal(automationStatus()));
+                    var stats = analytics.snapshot(System.currentTimeMillis());
+                    context.getSource().sendFeedback(Component.literal("[AutoGamble] Payment Sounds: " + (c.paymentSoundAlertsEnabled ? "ON" : "OFF")
+                            + ", Session Received: " + stats.paymentsReceived() + ", Session Net: " + MoneyValues.display(stats.trackedNetProfit())
+                            + ", Lifetime Customers: " + stats.customers().size()));
                     return 1;
                 }))));
-        LOGGER.info("[AutoGamble] 1.2.0 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
+        LOGGER.info("[AutoGamble] 1.2.1 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
     }
     private void receive(Component message, ReceivedMessage.Channel channel) {
         var client = Minecraft.getInstance();
@@ -183,7 +203,8 @@ public final class AutoGambleClient implements ClientModInitializer {
         var context = new SettingsContext(configs, this::refreshConfig, selection::reset,
                 () -> "Candidates: " + dispatcher.eligiblePlayers().size() + "  •  Paid: " + selection.paidUsernames().size()
                         + "  •  Payouts: " + payments.size() + "  •  Patterns: " + parser.enabledCount(),
-                () -> client.player == null ? "" : client.player.getGameProfile().name(), payerHistory::reset, follow::clearHistory, this::automationStatus);
+                () -> client.player == null ? "" : client.player.getGameProfile().name(), payerHistory::reset, follow::clearHistory,
+                this::automationStatus, () -> analytics.snapshot(System.currentTimeMillis()));
         client.gui.setScreen(new AutoGambleSettingsScreen(null, context));
     }
     private String automationStatus() {
@@ -203,5 +224,19 @@ public final class AutoGambleClient implements ClientModInitializer {
             + ", Received players: " + data.receivedPlayers() + ", Paid players: " + data.paidPlayers()
             + (data.error().isEmpty() ? "" : "\nData warning: " + data.error());
     }
-    private void resetSession() { knownBalance.invalidate(); if (follow != null) follow.resetSession(); if (dispatcher != null) dispatcher.resetSession(); cancelWork(); gamble.reset(); lastConnection = null; lastWorld = null; }
+    private void resetSession() {
+        knownBalance.invalidate(); soundAlerts.resetSession();
+        if (analytics != null) analytics.resetSession(System.currentTimeMillis());
+        if (follow != null) follow.resetSession(); if (dispatcher != null) dispatcher.resetSession();
+        cancelWork(); gamble.reset(); lastConnection = null; lastWorld = null;
+    }
+    private void playPaymentSound(PaymentAlertTier tier) {
+        var client = Minecraft.getInstance();
+        if (client.player == null) return;
+        Identifier id = Identifier.tryParse(tier.sound);
+        if (id == null || !BuiltInRegistries.SOUND_EVENT.containsKey(id)) {
+            LOGGER.warn("[AutoGamble] Unknown payment alert sound id: {}", tier.sound); return;
+        }
+        client.player.playSound(BuiltInRegistries.SOUND_EVENT.getValue(id), tier.volume, tier.pitch);
+    }
 }
