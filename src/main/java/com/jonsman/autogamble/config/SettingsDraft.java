@@ -8,6 +8,9 @@ public final class SettingsDraft {
     public enum Field {
         PREFIX_MIN("minimumPrefixLength", "Minimum Prefix Length", true),
         PREFIX_MAX("maximumPrefixLength", "Maximum Prefix Length", true),
+        SPAM_THRESHOLD("spamPaymentThreshold", "Spam Payment Threshold", true),
+        SPAM_WINDOW("spamPaymentWindowSeconds", "Spam Detection Window (s)", true),
+        SPAM_COOLDOWN("spamWarningCooldownSeconds", "Warning Cooldown (s)", true),
         AMOUNT("autoPayAmount", "Auto Pay Amount ($)", false),
         PAY_MIN("minimumAutoPayDelaySeconds", "Minimum Pay Delay (s)", false),
         PAY_MAX("maximumAutoPayDelaySeconds", "Maximum Pay Delay (s)", false),

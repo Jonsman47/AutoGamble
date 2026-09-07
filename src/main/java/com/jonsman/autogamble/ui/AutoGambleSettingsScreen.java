@@ -69,6 +69,15 @@ public final class AutoGambleSettingsScreen extends Screen {
                 number(Field.DEDUP, "Prevents the same server payment from being processed more than once.");
                 number(Field.TRACK, "Rejects incoming candidates matching recently sent payments.");
                 button("Parser Setup & Test…", left, row + 8, panel, () -> minecraft.gui.setScreen(new AdvancedParserScreen(this, context, draft)));
+                button("Spam Payment Warning…", left, row + 32, panel, () -> { page = 8; rebuildWidgets(); });
+            }
+            case 8 -> {
+                toggle("Spam Warning Enabled", () -> draft.working.spamPaymentWarningEnabled, v -> draft.working.spamPaymentWarningEnabled = v,
+                        "Warns players who send several payments too quickly.");
+                number(Field.SPAM_THRESHOLD, "Number of payments needed to trigger a warning.");
+                number(Field.SPAM_WINDOW, "How quickly those payments must arrive.");
+                number(Field.SPAM_COOLDOWN, "Minimum time before the same player can be warned again.");
+                button("Back to Advanced", left, row, panel, () -> { page = 4; rebuildWidgets(); });
             }
             case 7 -> {
                 toggle("First-Time Payer Bonus", () -> draft.working.firstTimePayerBonusEnabled, v -> draft.working.firstTimePayerBonusEnabled = v,
@@ -137,11 +146,11 @@ public final class AutoGambleSettingsScreen extends Screen {
     @Override public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float delta) {
         super.extractRenderState(g, mx, my, delta);
         g.centeredText(font, title, width / 2, 15, 0xFFFFFFFF);
-        g.centeredText(font, "1.0.5  •  " + (draft.working.dryRunMode ? "DRY RUN — no real payments" : "REAL PAYMENTS") + "  •  Save to apply", width / 2, 30, draft.working.dryRunMode ? 0xFF99DDCC : 0xFFFFBB66);
+        g.centeredText(font, "1.1.0  •  " + (draft.working.dryRunMode ? "DRY RUN — no real payments" : "REAL PAYMENTS") + "  •  Save to apply", width / 2, 30, draft.working.dryRunMode ? 0xFF99DDCC : 0xFFFFBB66);
         fields.forEach((field, box) -> g.text(font, field.label, left, box.getY() + 6, 0xFFE0E0E0));
         if (page == 0) g.centeredText(font, font.plainSubstrByWidth(status, panel), width / 2, 178, 0xFFAAAAAA);
         if (page == 3) g.textWithWordWrap(font, Component.literal("Winners are paid one at a time. Disabling gambling clears pending payouts."), left, 132, panel, 0xFFAAAAAA);
-        if (page == 4) g.textWithWordWrap(font, Component.literal("DonutSMP incoming payments are supported. Test messages in dry run before enabling real payments."), left, 166, panel, 0xFFAAAAAA);
+        if (page == 4 && height > 300) g.textWithWordWrap(font, Component.literal("DonutSMP incoming payments are supported. Test messages in dry run before enabling real payments."), left, 190, panel, 0xFFAAAAAA);
         if (page == 5) {
             g.centeredText(font, "Toggle AutoGamble — default F8", width / 2, 80, 0xFFE0E0E0);
             g.centeredText(font, "Open Settings — default F9", width / 2, 97, 0xFFE0E0E0);

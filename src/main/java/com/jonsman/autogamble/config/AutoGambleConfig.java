@@ -2,8 +2,12 @@ package com.jonsman.autogamble.config;
 
 /** Mutable editing model; publish changes through ConfigManager.update on the client thread. */
 public final class AutoGambleConfig {
-    public int configVersion = 4;
+    public int configVersion = 5;
     public boolean donutSmpIncomingEnabled = true;
+    public static final String DEFAULT_SPAM_MESSAGE = "This is an automated message: Please do not spam payments to the gambling bot. Some payments may go unprocessed. Please wait 5-10 seconds between each payment.";
+    public boolean spamPaymentWarningEnabled = true;
+    public int spamPaymentThreshold = 3, spamPaymentWindowSeconds = 10, spamWarningCooldownSeconds = 60;
+    public String spamWarningMessage = DEFAULT_SPAM_MESSAGE;
     public boolean dryRunMode = true;
     public boolean firstTimePayerBonusEnabled = true;
     public double firstTimeWinBonus = 0.10;
@@ -26,7 +30,11 @@ public final class AutoGambleConfig {
     public long winnerDelayMinimumMs = 200, winnerDelayMaximumMs = 700;
 
     public void validate() {
-        configVersion = 4;
+        configVersion = 5;
+        spamPaymentThreshold = Math.clamp(spamPaymentThreshold, 2, 20);
+        spamPaymentWindowSeconds = Math.clamp(spamPaymentWindowSeconds, 1, 60);
+        spamWarningCooldownSeconds = Math.clamp(spamWarningCooldownSeconds, 5, 600);
+        if (!com.jonsman.autogamble.payment.SpamWarningCommand.validText(spamWarningMessage)) spamWarningMessage = DEFAULT_SPAM_MESSAGE;
         minimumPrefixLength = Math.clamp(minimumPrefixLength, 1, 3);
         maximumPrefixLength = Math.clamp(maximumPrefixLength, minimumPrefixLength, 3);
         receiptDeduplicationWindowMs = Math.clamp(receiptDeduplicationWindowMs, 100, 60000);

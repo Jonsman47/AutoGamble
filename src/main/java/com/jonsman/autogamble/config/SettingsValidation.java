@@ -13,6 +13,11 @@ public final class SettingsValidation {
         range(errors, "Minimum Pay Delay", c.minimumAutoPayDelaySeconds, .001, 86400);
         range(errors, "Maximum Pay Delay", c.maximumAutoPayDelaySeconds, c.minimumAutoPayDelaySeconds, 86400);
         range(errors, "First-Time Win Bonus", c.firstTimeWinBonus, 0, 1);
+        range(errors, "Spam Payment Threshold", c.spamPaymentThreshold, 2, 20);
+        range(errors, "Spam Detection Window", c.spamPaymentWindowSeconds, 1, 60);
+        range(errors, "Warning Cooldown", c.spamWarningCooldownSeconds, 5, 600);
+        if (!com.jonsman.autogamble.payment.SpamWarningCommand.validText(c.spamWarningMessage))
+            errors.add("Warning message must be 1–200 characters without line breaks or control characters.");
         range(errors, "Win Chance", c.winChance, 0, 1);
         range(errors, "Payout Multiplier", c.payoutMultiplier, .001, 1000);
         range(errors, "Minimum Bet", c.minimumBet, 0, 1e9);

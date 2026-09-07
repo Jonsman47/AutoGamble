@@ -17,7 +17,7 @@ class SettingsTest {
     @Test void migrationPreservesStageThreeValuesAndAddsSafeDefault() throws Exception {
         Files.writeString(dir.resolve("autogamble.json"), "{\"configVersion\":2,\"autoPayEnabled\":true,\"gambleEnabled\":true,\"autoPayAmount\":27.5,\"winChance\":0.55,\"receiptDeduplicationWindowMs\":3500}");
         var m = manager(); m.load(); var c = m.snapshot();
-        assertEquals(4, c.configVersion); assertTrue(c.dryRunMode); assertTrue(c.autoPayEnabled); assertTrue(c.gambleEnabled);
+        assertEquals(5, c.configVersion); assertTrue(c.dryRunMode); assertTrue(c.autoPayEnabled); assertTrue(c.gambleEnabled);
         assertEquals(27.5, c.autoPayAmount); assertEquals(.55, c.winChance); assertEquals(3500, c.receiptDeduplicationWindowMs);
     }
     @Test void dryRunDefaultsTrueAndPersistsExplicitChoice() {

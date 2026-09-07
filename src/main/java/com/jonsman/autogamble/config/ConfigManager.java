@@ -47,14 +47,14 @@ public final class ConfigManager {
                     }
                     if (!value.isJsonPrimitive()) throw new JsonParseException("Invalid " + entry.getKey());
                     JsonPrimitive p = value.getAsJsonPrimitive();
-                    if (entry.getValue().getAsJsonPrimitive().isBoolean() ? !p.isBoolean() : !p.isNumber())
+                    if (entry.getValue().getAsJsonPrimitive().isBoolean() ? !p.isBoolean() : (entry.getValue().getAsJsonPrimitive().isString() ? !p.isString() : !p.isNumber()))
                         throw new JsonParseException("Wrong type: " + entry.getKey());
                 }
                 int version = object.has("configVersion") ? object.get("configVersion").getAsBigDecimal().intValueExact() : 0;
-                for (String key : new String[]{"winnerDelayMinimumMs", "winnerDelayMaximumMs", "receiptDeduplicationWindowMs", "outgoingPaymentTrackingWindowMs"}) {
+                for (String key : new String[]{"spamPaymentThreshold", "spamPaymentWindowSeconds", "spamWarningCooldownSeconds", "minimumPrefixLength", "maximumPrefixLength", "winnerDelayMinimumMs", "winnerDelayMaximumMs", "receiptDeduplicationWindowMs", "outgoingPaymentTrackingWindowMs"}) {
                     if (object.has(key)) object.get(key).getAsBigDecimal().longValueExact();
                 }
-                if (version > 4) {
+                if (version > 5) {
                     futureVersion = true;
                     config.enabled = false;
                     log.warn("[AutoGamble] Newer config version {}; using disabled defaults without overwriting", version);
@@ -75,7 +75,7 @@ public final class ConfigManager {
     private void migrate(JsonObject object, int version) {
         if (version < 0) throw new JsonParseException("Negative configVersion");
         // Version 0 means an unversioned file. Missing fields retain constructor defaults.
-        if (version <= 3) object.addProperty("configVersion", 4);
+        if (version <= 4) object.addProperty("configVersion", 5);
     }
     public void update(Consumer<AutoGambleConfig> editor) {
         if (futureVersion) {

@@ -89,9 +89,12 @@ public final class AutoGambleClient implements ClientModInitializer {
                     context.getSource().sendFeedback(Component.literal(String.format(java.util.Locale.ROOT,
                             "[AutoGamble] Base Win Chance: %.1f%%, First-Time Bonus: %s, First-Time Win Bonus: +%.1f%%, Known Payers: %d",
                             c.winChance * 100, c.firstTimePayerBonusEnabled ? "ON" : "OFF", c.firstTimeWinBonus * 100, payerHistory.size())));
+                    context.getSource().sendFeedback(Component.literal("[AutoGamble] Spam Warning: " + (c.spamPaymentWarningEnabled ? "ON" : "OFF")
+                            + ", Spam Threshold: " + c.spamPaymentThreshold + ", Spam Window: " + c.spamPaymentWindowSeconds
+                            + "s, Warning Cooldown: " + c.spamWarningCooldownSeconds + "s, Tracked Recent Payers: " + gamble.spam.size()));
                     return 1;
                 }))));
-        LOGGER.info("[AutoGamble] 1.0.5 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
+        LOGGER.info("[AutoGamble] 1.1.0 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
     }
     private void receive(Component message, ReceivedMessage.Channel channel) {
         var client = Minecraft.getInstance();
@@ -113,6 +116,8 @@ public final class AutoGambleClient implements ClientModInitializer {
             configRevision = configs.revision();
             parser = RegexPaymentParser.fromConfig(activeConfig);
             gamble.parser(parser);
+            if (!activeConfig.enabled || !activeConfig.gambleEnabled || !activeConfig.spamPaymentWarningEnabled
+                    || previous != null && previous.dryRunMode != activeConfig.dryRunMode) gamble.spam.reset();
             var change = RuntimeSettingsChange.between(previous, activeConfig);
             if (change.clearPayouts()) payouts.cancel();
             if (change.resetSimulation()) { selection.reset(); receipts.reset(); }
@@ -151,6 +156,7 @@ public final class AutoGambleClient implements ClientModInitializer {
         if (!config.enabled) { cancelWork(); return; }
         dispatcher.beginTick();
         payouts.tick(now, config, dispatcher);
+        gamble.spam.tick(now, config, dispatcher::sendWarning);
         autoPay.tick(now, config, dispatcher, selection);
     }
     private void cancelWork() { if (dispatcher != null) dispatcher.cancelDiscovery(); autoPay.reset(); payouts.cancel(); selection.reset(); }

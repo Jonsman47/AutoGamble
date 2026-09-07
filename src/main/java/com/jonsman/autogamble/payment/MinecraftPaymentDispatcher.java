@@ -1,5 +1,8 @@
 package com.jonsman.autogamble.payment;
 
+import com.jonsman.autogamble.config.AutoGambleConfig;
+import org.slf4j.LoggerFactory;
+
 import com.jonsman.autogamble.manager.PlayerSelectionManager;
 import com.jonsman.autogamble.manager.PlayerSelectionManager.Candidate;
 import net.minecraft.client.Minecraft;
@@ -82,6 +85,28 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
         discovery.selected(target.username());
         return sendPayment(target.username(), new java.math.BigDecimal(amount), OutgoingPaymentTracker.Source.ADVERTISING) == Result.SENT;
     }
+   public boolean sendWarning(String username, String message) {
+      AutoGambleConfig c = this.config.get();
+      if (!c.enabled || !c.gambleEnabled || !c.spamPaymentWarningEnabled || !this.connected() || this.inputBlocked() || !this.client.isSameThread()) {
+         return false;
+      } else if (SpamWarningCommand.validText(message)
+         && username != null
+         && username.matches("[A-Za-z0-9_]{3,16}")
+         && !username.equalsIgnoreCase(this.client.player.getGameProfile().name())
+         && this.gate.reserve()) {
+         try {
+            SpamWarningCommand.execute(c.dryRunMode, username, message, cmd -> this.client.getConnection().sendCommand(cmd));
+         } catch (RuntimeException var5) {
+            LoggerFactory.getLogger("autogamble").warn("[AutoGamble] Warning dispatch failed; not retrying ambiguous send", var5);
+         }
+
+         return true;
+      } else {
+         return false;
+      }
+   }
+
+
     @Override public Result sendPayment(String username, java.math.BigDecimal amount, OutgoingPaymentTracker.Source source) {
         var c = config.get();
         if (!c.enabled || (source == OutgoingPaymentTracker.Source.ADVERTISING ? !c.autoPayEnabled : !c.gambleEnabled)

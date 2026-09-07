@@ -13,6 +13,7 @@ public final class GambleManager {
     @FunctionalInterface public interface InvalidBetPolicy { void ignored(PaymentParser.IncomingPayment payment); }
     private static final Logger LOG = LoggerFactory.getLogger("autogamble");
     private PaymentParser parser;
+    public final PaymentSpamTracker spam = new PaymentSpamTracker();
     private com.jonsman.autogamble.config.PayerHistory history = new com.jonsman.autogamble.config.PayerHistory();
     public void history(com.jonsman.autogamble.config.PayerHistory history) { this.history = history; }
     public int knownPayers() { return history.size(); }
@@ -49,6 +50,7 @@ public final class GambleManager {
         if (outgoing.conflicts(payment, now, c.outgoingPaymentTrackingWindowMs)) {
             LOG.debug("[AutoGamble] Incoming candidate conflicts with tracked outgoing payment"); return Outcome.OUTGOING;
         }
+        spam.observe(payment.sender(), now, c);
         if (payment.amount().compareTo(BigDecimal.valueOf(c.minimumBet)) < 0
                 || payment.amount().compareTo(BigDecimal.valueOf(c.maximumBet)) > 0) {
             LOG.info("[AutoGamble] Ignored bet outside configured limits: {} ${}", payment.sender(), payment.amount());
@@ -82,5 +84,5 @@ public final class GambleManager {
         receipts.expire(now, c.receiptDeduplicationWindowMs);
         outgoing.expire(now, c.outgoingPaymentTrackingWindowMs);
     }
-    public void reset() { lastIncoming = "none"; receipts.reset(); outgoing.reset(); }
+    public void reset() { spam.reset(); lastIncoming = "none"; receipts.reset(); outgoing.reset(); }
 }
