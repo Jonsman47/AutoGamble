@@ -18,7 +18,9 @@ public final class PaymentHistory implements AutoCloseable {
     public record Transaction(Direction direction, String player, BigDecimal amount, long timestamp, String source) {}
     public record Customer(String name, BigDecimal total) {}
     public record Snapshot(boolean ready, int stored, int receivedPlayers, int paidPlayers,
-                           Set<String> followed, List<Customer> eligible, String error) {}
+                           Set<String> followed, List<Customer> eligible, String error,
+                           List<Customer> receivedTotals, List<Customer> paidTotals,
+                           List<Transaction> transactions, List<String> followedPlayers) {}
     private record Policy(boolean paid, boolean top, boolean recent, boolean received, boolean sent,
                           BigDecimal min, BigDecimal max, int lines, int retention, boolean newest, BigDecimal followThreshold) {
         static Policy of(AutoGambleConfig c) { return new Policy(c.generatePaymentsToPlayersReport, c.generateTopCustomersReport,
@@ -37,7 +39,8 @@ public final class PaymentHistory implements AutoCloseable {
     private Policy policy;
     private boolean dirty, followedDirty;
     private String error = "";
-    private volatile Snapshot snapshot = new Snapshot(false, 0, 0, 0, Set.of(), List.of(), "");
+    private volatile Snapshot snapshot = new Snapshot(false, 0, 0, 0, Set.of(), List.of(), "",
+            List.of(), List.of(), List.of(), List.of());
     public PaymentHistory(Path root, AutoGambleConfig config) {
         this.root = root; policy = Policy.of(config);
         worker.setRemoveOnCancelPolicy(true);
@@ -157,7 +160,15 @@ public final class PaymentHistory implements AutoCloseable {
     private void publish() {
         List<Customer> eligible = received.entrySet().stream().filter(e -> e.getValue().compareTo(policy.followThreshold) >= 0 && !followed.containsKey(e.getKey()))
             .sorted(Map.Entry.comparingByKey()).map(e -> new Customer(names.getOrDefault(e.getKey(), e.getKey()), e.getValue())).toList();
-        snapshot = new Snapshot(protectedFiles.isEmpty() && !followedDirty, history.size(), received.size(), paid.size(), Set.copyOf(followed.keySet()), eligible, error);
+        List<String> followedPlayers = followed.values().stream().sorted(String.CASE_INSENSITIVE_ORDER).toList();
+        snapshot = new Snapshot(protectedFiles.isEmpty() && !followedDirty, history.size(), received.size(), paid.size(),
+                Set.copyOf(followed.keySet()), eligible, error, customerTotals(received), customerTotals(paid),
+                List.copyOf(history), followedPlayers);
+    }
+    private List<Customer> customerTotals(Map<String, BigDecimal> totals) {
+        return totals.entrySet().stream().filter(e -> e.getValue().signum() > 0)
+                .sorted(Map.Entry.<String, BigDecimal>comparingByValue().reversed().thenComparing(Map.Entry.comparingByKey()))
+                .map(e -> new Customer(names.getOrDefault(e.getKey(), e.getKey()), e.getValue())).toList();
     }
     private void flush() {
         if (followedDirty) { writeFollowed(); publish(); }

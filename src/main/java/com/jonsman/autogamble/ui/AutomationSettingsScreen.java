@@ -45,7 +45,7 @@ public final class AutomationSettingsScreen extends Screen {
         switch (page) {
             case 0 -> {
                 button("Good Customer Follow", row, () -> navigate(1));
-                button("Payment Report Files", row+28, () -> navigate(2));
+                button("Optional TXT Exports", row+28, () -> navigate(2));
                 button("Balance Payment Rules", row+56, () -> navigate(5));
                 button("Auto-Pay Attribution", row+84, () -> navigate(7));
             }
@@ -58,9 +58,9 @@ public final class AutomationSettingsScreen extends Screen {
                 }, Component.literal("Clear Followed Player History?"), Component.literal("Clearing this list allows previously followed players to trigger Auto Follow again."))));
             }
             case 2 -> {
-                toggle("Generate Payments-To-Players File", () -> c.generatePaymentsToPlayersReport, v -> c.generatePaymentsToPlayersReport = v, "Totals of real dispatched outgoing payments.");
-                toggle("Generate Top-Customers File", () -> c.generateTopCustomersReport, v -> c.generateTopCustomersReport = v, "Cumulative validated incoming payments.");
-                toggle("Generate Recent-Payments File", () -> c.generateRecentPaymentsReport, v -> c.generateRecentPaymentsReport = v, "OFF preserves the existing file without updating it.");
+                toggle("Generate Payments-To-Players TXT", () -> c.generatePaymentsToPlayersReport, v -> c.generatePaymentsToPlayersReport = v, "Totals of real dispatched outgoing payments.");
+                toggle("Generate Top-Customers TXT", () -> c.generateTopCustomersReport, v -> c.generateTopCustomersReport = v, "Cumulative validated incoming payments.");
+                toggle("Generate Recent-Payments TXT", () -> c.generateRecentPaymentsReport, v -> c.generateRecentPaymentsReport = v, "OFF preserves the existing file without updating it.");
                 button("Recent Payment Filters", row, () -> navigate(3));
                 button("Order, Lines & Stored History", row+24, () -> navigate(4));
             }
@@ -145,7 +145,7 @@ public final class AutomationSettingsScreen extends Screen {
     @Override public void onClose() { minecraft.gui.setScreen(parent); }
     @Override public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float delta) {
         super.extractRenderState(g,mx,my,delta);
-        String[] titles={"Customers, Reports & Balance", "Good Customer Follow", "Payment Report Files", "Recent Payment Filters", "Order, Lines & Stored History", "Balance Payment Rules", "Edit Balance Rule", "Auto-Pay Attribution"};
+        String[] titles={"Customers, Reports & Balance", "Good Customer Follow", "Optional TXT Exports", "Recent Payment Filters", "Order, Lines & Stored History", "Balance Payment Rules", "Edit Balance Rule", "Auto-Pay Attribution"};
         g.centeredText(font, Component.literal(titles[page]), width/2, 15, 0xFFFFFFFF);
         String hint=page==5 ? "Balance: UNKNOWN — no verified DonutSMP source" : "Save to apply • Back preserves your draft";
         g.centeredText(font, font.plainSubstrByWidth(hint,panel),width/2,34,0xFFAAAAAA);

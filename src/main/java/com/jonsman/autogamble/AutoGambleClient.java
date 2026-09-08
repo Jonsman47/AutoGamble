@@ -128,7 +128,7 @@ public final class AutoGambleClient implements ClientModInitializer {
                             + ", Lifetime Customers: " + stats.customers().size()));
                     return 1;
                 }))));
-        LOGGER.info("[AutoGamble] 1.2.1 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
+        LOGGER.info("[AutoGamble] 1.2.3 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
     }
     private void receive(Component message, ReceivedMessage.Channel channel) {
         var client = Minecraft.getInstance();
@@ -204,7 +204,7 @@ public final class AutoGambleClient implements ClientModInitializer {
                 () -> "Candidates: " + dispatcher.eligiblePlayers().size() + "  •  Paid: " + selection.paidUsernames().size()
                         + "  •  Payouts: " + payments.size() + "  •  Patterns: " + parser.enabledCount(),
                 () -> client.player == null ? "" : client.player.getGameProfile().name(), payerHistory::reset, follow::clearHistory,
-                this::automationStatus, () -> analytics.snapshot(System.currentTimeMillis()));
+                this::automationStatus, () -> analytics.snapshot(System.currentTimeMillis()), history::snapshot, history::refresh);
         client.gui.setScreen(new AutoGambleSettingsScreen(null, context));
     }
     private String automationStatus() {
