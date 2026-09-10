@@ -37,7 +37,7 @@ class ReportViewDataTest {
 
     private static SettingsContext context(PaymentHistory.Snapshot snapshot) {
         return new SettingsContext(null, () -> {}, () -> {}, () -> "", () -> "", () -> false,
-                () -> {}, () -> "", () -> null, () -> snapshot, () -> {});
+                () -> {}, () -> "", () -> null, () -> snapshot, () -> {}, () -> new com.jonsman.autogamble.payment.TippingManager.Snapshot(0, false, ""), () -> com.jonsman.autogamble.payment.TippingManager.QueueResult.FULL);
     }
 
     private static ReportViewData.RecentFilter filter(boolean received, boolean paid, String min,

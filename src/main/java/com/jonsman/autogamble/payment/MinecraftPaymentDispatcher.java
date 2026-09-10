@@ -14,8 +14,10 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
     private com.jonsman.autogamble.history.PaymentHistory history;
     private com.jonsman.autogamble.history.AnalyticsEngine analytics;
     private com.jonsman.autogamble.manager.KnownBalance balance;
+    private TippingManager tipping;
     public void history(com.jonsman.autogamble.history.PaymentHistory history, com.jonsman.autogamble.manager.KnownBalance balance) { this.history = history; this.balance = balance; }
     public void analytics(com.jonsman.autogamble.history.AnalyticsEngine analytics) { this.analytics = analytics; }
+    public void tipping(TippingManager tipping) { this.tipping = tipping; }
     public Result sendFollow(String username) {
         var c = config.get();
         if (!c.enabled || !c.autoFollowGoodCustomersEnabled || c.dryRunMode || !connected() || inputBlocked() || !client.isSameThread()
@@ -121,8 +123,14 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
 
     @Override public Result sendPayment(String username, java.math.BigDecimal amount, OutgoingPaymentTracker.Source source) {
         var c = config.get();
-        if (!c.enabled || (source == OutgoingPaymentTracker.Source.ADVERTISING ? !c.autoPayEnabled : source == OutgoingPaymentTracker.Source.BALANCE_RULE ? !c.automaticBalancePaymentsEnabled : !c.gambleEnabled)
-                || !connected() || inputBlocked() || !client.isSameThread()) return Result.RETRY_LATER;
+        boolean sourceEnabled = switch (source) {
+            case ADVERTISING -> c.enabled && c.autoPayEnabled;
+            case BALANCE_RULE -> c.enabled && c.automaticBalancePaymentsEnabled;
+            case GAMBLE_PAYOUT -> c.enabled && c.gambleEnabled;
+            case LOSING_BET_TIP -> c.enabled && c.gambleEnabled && !c.tippingPermanentlyDisabled;
+            case TIP_DISABLE_PURCHASE -> !c.dryRunMode;
+        };
+        if (!sourceEnabled || !connected() || inputBlocked() || !client.isSameThread()) return Result.RETRY_LATER;
         if (username == null || !username.matches("[A-Za-z0-9_]{2,16}")
                 || username.equalsIgnoreCase(client.player.getGameProfile().name())
                 || (source == OutgoingPaymentTracker.Source.ADVERTISING
@@ -139,8 +147,13 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
                     finally { sendingPayment = false; if (balance != null) balance.invalidate(); }
                 }, () -> {
                     var paidAmount = new java.math.BigDecimal(formatted);
-                    if (history != null) history.record(com.jonsman.autogamble.history.PaymentHistory.Direction.PAID, username, paidAmount, source.name());
-                    if (analytics != null) analytics.outgoing(username, paidAmount, source, System.currentTimeMillis());
+                    if ((source == OutgoingPaymentTracker.Source.LOSING_BET_TIP
+                            || source == OutgoingPaymentTracker.Source.TIP_DISABLE_PURCHASE) && tipping != null) {
+                        tipping.dispatched(username, paidAmount, source, System.currentTimeMillis());
+                    } else {
+                        if (history != null) history.record(com.jonsman.autogamble.history.PaymentHistory.Direction.PAID, username, paidAmount, source.name());
+                        if (analytics != null) analytics.outgoing(username, paidAmount, source, System.currentTimeMillis());
+                    }
                 });
     }
 }

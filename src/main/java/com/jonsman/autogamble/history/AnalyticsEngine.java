@@ -26,7 +26,10 @@ public final class AnalyticsEngine implements AutoCloseable {
                            BigDecimal sessionAttributedProfit, long lifetimeAdvertisingPayments,
                            BigDecimal lifetimeAdvertisingSpend, int lifetimeUniqueAdvertised,
                            int lifetimeConverted, BigDecimal lifetimeAttributedRevenue,
-                           BigDecimal lifetimeAttributedProfit, List<Customer> customers, String error) {
+                           BigDecimal lifetimeAttributedProfit,
+                           long sessionTipsPaid, BigDecimal sessionTipAmount,
+                           long lifetimeTipsPaid, BigDecimal lifetimeTipAmount,
+                           List<Customer> customers, String error) {
         public BigDecimal trackedNetProfit() { return moneyReceived.subtract(moneyPaid); }
         public double elapsedSeconds() { return Math.max(0, now - sessionStarted) / 1000.0; }
         public double paymentsPerMinute() { return elapsedSeconds() <= 0 ? 0 : paymentsReceived * 60.0 / elapsedSeconds(); }
@@ -42,6 +45,7 @@ public final class AnalyticsEngine implements AutoCloseable {
         long advertisingPayments; BigDecimal advertisingSpend = ZERO;
         Set<String> uniqueAdvertised = new HashSet<>(), converted = new HashSet<>();
         BigDecimal attributedRevenue = ZERO, attributedProfit = ZERO;
+        long tipsPaid; BigDecimal tipAmount = ZERO;
         Map<String, Touch> touches = new HashMap<>();
         Map<String, Long> convertedUntil = new HashMap<>();
     }
@@ -65,9 +69,9 @@ public final class AnalyticsEngine implements AutoCloseable {
     private String error = "";
     private boolean dirty, scheduled;
     private long started;
-    private long paymentsReceived, bets, sessionAdvertisingPayments;
+    private long paymentsReceived, bets, sessionAdvertisingPayments, sessionTipsPaid;
     private long wins, losses;
-    private BigDecimal received = ZERO, paid = ZERO, gamblingProfit = ZERO, gamblingStake = ZERO, advertisingCost = ZERO;
+    private BigDecimal received = ZERO, paid = ZERO, gamblingProfit = ZERO, gamblingStake = ZERO, advertisingCost = ZERO, sessionTipAmount = ZERO;
     private final Set<String> sessionUnique = new HashSet<>(), sessionReturning = new HashSet<>();
     private final Set<String> sessionAdvertised = new HashSet<>(), sessionConverted = new HashSet<>();
     private final Map<String, Touch> sessionTouches = new HashMap<>();
@@ -126,6 +130,11 @@ public final class AnalyticsEngine implements AutoCloseable {
                 if (attribution.session) sessionAttributedProfit = sessionAttributedProfit.subtract(amount);
                 if (attribution.lifetime) data.attributedProfit = data.attributedProfit.subtract(amount);
             }
+        } else if (source == OutgoingPaymentTracker.Source.LOSING_BET_TIP) {
+            sessionTipsPaid++;
+            sessionTipAmount = sessionTipAmount.add(amount);
+            data.tipsPaid++;
+            data.tipAmount = data.tipAmount.add(amount);
         } else if (source == OutgoingPaymentTracker.Source.ADVERTISING) {
             advertisingCost = advertisingCost.add(amount); sessionAdvertisingPayments++; sessionAdvertised.add(key);
             data.advertisingPayments++; data.advertisingSpend = data.advertisingSpend.add(amount); data.uniqueAdvertised.add(key);
@@ -157,8 +166,8 @@ public final class AnalyticsEngine implements AutoCloseable {
     private static boolean active(Long until, long now) { return until != null && now <= until; }
 
     public synchronized void resetSession(long now) {
-        started = now; paymentsReceived = bets = wins = losses = sessionAdvertisingPayments = 0;
-        received = paid = gamblingProfit = gamblingStake = advertisingCost = ZERO;
+        started = now; paymentsReceived = bets = wins = losses = sessionAdvertisingPayments = sessionTipsPaid = 0;
+        received = paid = gamblingProfit = gamblingStake = advertisingCost = sessionTipAmount = ZERO;
         sessionUnique.clear(); sessionReturning.clear(); sessionAdvertised.clear(); sessionConverted.clear(); sessionTouches.clear(); sessionConvertedUntil.clear();
         sessionAttributedRevenue = sessionAttributedProfit = ZERO; payoutAttribution.clear();
     }
@@ -171,7 +180,8 @@ public final class AnalyticsEngine implements AutoCloseable {
                 wins, losses, gamblingStake, sessionUnique.size(), sessionReturning.size(), sessionAdvertisingPayments, advertisingCost,
                 sessionAdvertised.size(), sessionConverted.size(), sessionAttributedRevenue, sessionAttributedProfit,
                 data.advertisingPayments, data.advertisingSpend, data.uniqueAdvertised.size(), data.converted.size(),
-                data.attributedRevenue, data.attributedProfit, customers, error);
+                data.attributedRevenue, data.attributedProfit, sessionTipsPaid, sessionTipAmount,
+                data.tipsPaid, data.tipAmount, customers, error);
     }
 
     private void load() {
@@ -191,6 +201,7 @@ public final class AnalyticsEngine implements AutoCloseable {
     private static void repair(Data d) throws IOException {
         if (d.customers == null || d.uniqueAdvertised == null || d.converted == null || d.touches == null || d.convertedUntil == null
                 || d.advertisingSpend == null || d.attributedRevenue == null || d.attributedProfit == null) throw new IOException("Missing analytics fields");
+        if (d.tipAmount == null) d.tipAmount = ZERO;
         for (CustomerData c : d.customers.values()) if (c == null || c.paidBy == null || c.paidBack == null) throw new IOException("Bad customer data");
     }
     private void changed() {

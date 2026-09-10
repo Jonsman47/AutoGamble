@@ -37,11 +37,13 @@ public final class AnalyticsScreen extends Screen {
                 y = line(g, y, "Session time: " + duration((long)s.elapsedSeconds()));
                 y = line(g, y, "Payments received: " + s.paymentsReceived() + "  •  Money received: " + money(s.moneyReceived()));
                 y = line(g, y, "Average payment: " + money(average(s.moneyReceived(), s.paymentsReceived())) + "  •  Payments/hour: " + String.format(Locale.ROOT, "%.2f", s.paymentsPerMinute() * 60));
-                y = line(g, y, "Money paid: " + money(s.moneyPaid()) + "  •  Tracked net profit: " + money(s.trackedNetProfit()));
+                y = line(g, y, "Money paid: " + money(s.moneyPaid()) + "  •  Net: " + money(s.trackedNetProfit()));
+                y = line(g, y, "Tips session/lifetime: " + s.sessionTipsPaid() + "/" + money(s.sessionTipAmount())
+                        + "  •  " + s.lifetimeTipsPaid() + "/" + money(s.lifetimeTipAmount()));
                 y = line(g, y, "Gambling profit: " + money(s.gamblingProfit()) + "  •  Advertising cost: " + money(s.advertisingCost()));
                 y = line(g, y, "Bets: " + s.bets() + "  •  Won/Lost: " + s.wins() + "/" + s.losses() + "  •  Average bet: " + money(average(s.gamblingStake(), s.bets())));
-                y = line(g, y, String.format(Locale.ROOT, "Payments/min: %.2f  •  Bets/min: %.2f", s.paymentsPerMinute(), s.betsPerMinute()));
-                line(g, y, "Unique customers: " + s.uniqueCustomers() + "  •  Returning customers: " + s.returningCustomers());
+                line(g, y, String.format(Locale.ROOT, "Payments/min: %.2f  •  Bets/min: %.2f  •  Unique/returning: %d/%d",
+                        s.paymentsPerMinute(), s.betsPerMinute(), s.uniqueCustomers(), s.returningCustomers()));
             }
             case 1 -> {
                 AutoGambleConfig c = draft.working; BigDecimal bet = BigDecimal.valueOf(c.minimumBet).add(BigDecimal.valueOf(c.maximumBet)).divide(BigDecimal.valueOf(2));

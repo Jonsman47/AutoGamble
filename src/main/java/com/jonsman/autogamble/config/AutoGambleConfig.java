@@ -2,7 +2,9 @@ package com.jonsman.autogamble.config;
 
 /** Mutable editing model; publish changes through ConfigManager.update on the client thread. */
 public final class AutoGambleConfig {
-    public int configVersion = 7;
+    public int configVersion = 8;
+    public boolean tippingDisclosureAcknowledged = false;
+    public boolean tippingPermanentlyDisabled = false;
     public boolean paymentSoundAlertsEnabled = true;
     public int minimumAlertSpacingMs = 250;
     public java.util.List<PaymentAlertTier> paymentAlertTiers = defaultPaymentAlertTiers();
@@ -43,7 +45,7 @@ public final class AutoGambleConfig {
     public long winnerDelayMinimumMs = 200, winnerDelayMaximumMs = 700;
 
     public void validate() {
-        configVersion = 7;
+        configVersion = 8;
         minimumAlertSpacingMs = Math.clamp(minimumAlertSpacingMs, 0, 5000);
         autoPayConversionWindowSeconds = Math.clamp(autoPayConversionWindowSeconds, 0, 86400);
         autoPayAttributionDurationSeconds = Math.clamp(autoPayAttributionDurationSeconds, 0, 86400);

@@ -19,6 +19,12 @@ public final class GambleManager {
     private final ReceiptDeduplicator accountingReceipts = new ReceiptDeduplicator();
     private java.util.function.Consumer<PaymentParser.IncomingPayment> receivedObserver = payment -> {};
     private AcceptedObserver acceptedObserver = (payment, first, won, payout, now, config) -> {};
+    private TippingManager tipping;
+    private java.util.function.BooleanSupplier tippingAcknowledged = () -> true;
+    public void tipping(TippingManager tipping, java.util.function.BooleanSupplier acknowledged) {
+        this.tipping = tipping;
+        this.tippingAcknowledged = acknowledged;
+    }
     public void receivedObserver(java.util.function.Consumer<PaymentParser.IncomingPayment> observer) { receivedObserver = observer; }
     public void acceptedObserver(AcceptedObserver observer) { acceptedObserver = observer; }
     public final PaymentSpamTracker spam = new PaymentSpamTracker();
@@ -58,7 +64,7 @@ public final class GambleManager {
             LOG.debug("[AutoGamble] Incoming candidate conflicts with tracked outgoing payment"); return Outcome.OUTGOING;
         }
         if (accountingReceipts.accept(payment, now, c.receiptDeduplicationWindowMs)) receivedObserver.accept(payment);
-        if (!c.enabled || !c.gambleEnabled) return Outcome.IGNORED;
+        if (!c.enabled || !c.gambleEnabled || !tippingAcknowledged.getAsBoolean()) return Outcome.IGNORED;
         spam.observe(payment.sender(), now, c);
         if (payment.amount().compareTo(BigDecimal.valueOf(c.minimumBet)) < 0
                 || payment.amount().compareTo(BigDecimal.valueOf(c.maximumBet)) > 0) {
@@ -81,7 +87,11 @@ public final class GambleManager {
         boolean wins = random.nextDouble() < chance;
         if (first) history.add(payment.sender());
         acceptedObserver.accepted(payment, first, wins, payout, now, c);
-        if (!wins) { LOG.info("[AutoGamble] {}{} lost", mode, payment.sender()); return Outcome.LOSS; }
+        if (!wins) {
+            if (tipping != null) tipping.queueLosingBetTip(payment.amount(), now, c, queue);
+            LOG.info("[AutoGamble] {}{} lost", mode, payment.sender());
+            return Outcome.LOSS;
+        }
         queue.offer(new PaymentQueue.Payment(payment.sender(), payout, PaymentQueue.Purpose.WINNER_PAYOUT, now));
         LOG.info("[AutoGamble] {}{} WON -> {}pay ${}", mode, payment.sender(), c.dryRunMode ? "would " : "", AmountFormatter.format(payout));
         return Outcome.WIN;

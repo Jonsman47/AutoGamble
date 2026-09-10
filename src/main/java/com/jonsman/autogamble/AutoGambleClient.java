@@ -40,6 +40,7 @@ public final class AutoGambleClient implements ClientModInitializer {
     private final HelpCommandRouter help = new HelpCommandRouter();
     private GoodCustomerFollow follow;
     private BalanceRuleEngine balanceRules;
+    private TippingManager tipping;
     private final KnownBalance knownBalance = new KnownBalance();
     private ConfigManager configs;
     private PayerHistory payerHistory;
@@ -61,6 +62,19 @@ public final class AutoGambleClient implements ClientModInitializer {
         var dataRoot = FabricLoader.getInstance().getConfigDir().resolve("autogamble");
         history = new com.jonsman.autogamble.history.PaymentHistory(dataRoot, activeConfig);
         analytics = new com.jonsman.autogamble.history.AnalyticsEngine(dataRoot.resolve("data/analytics.json"), LOGGER);
+        tipping = new TippingManager((username, amount, source) -> {
+            history.record(com.jonsman.autogamble.history.PaymentHistory.Direction.PAID, username, amount, source.name());
+            analytics.outgoing(username, amount, source, System.currentTimeMillis());
+            if (source == OutgoingPaymentTracker.Source.TIP_DISABLE_PURCHASE) {
+                configs.update(config -> config.tippingPermanentlyDisabled = true);
+                refreshConfig();
+                var client = Minecraft.getInstance();
+                if (client.player != null) client.player.sendSystemMessage(Component.literal(
+                        "[AutoGamble] 500M payment confirmed. Tipping is permanently disabled."));
+            }
+        });
+        payouts.tipping(tipping);
+        gamble.tipping(tipping, () -> activeConfig != null && activeConfig.tippingDisclosureAcknowledged);
         follow = new GoodCustomerFollow(history);
         balanceRules = new BalanceRuleEngine(dataRoot.resolve("data/balance_rule_state.json"));
         gamble.receivedObserver(payment -> {
@@ -74,6 +88,7 @@ public final class AutoGambleClient implements ClientModInitializer {
         dispatcher = new MinecraftPaymentDispatcher(Minecraft.getInstance(), selection, outgoing, () -> activeConfig);
         dispatcher.history(history, knownBalance);
         dispatcher.analytics(analytics);
+        dispatcher.tipping(tipping);
         var category = KeyMapping.Category.register(Identifier.fromNamespaceAndPath("autogamble", "main"));
         toggle = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.autogamble.toggle", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F8, category));
         settings = KeyMappingHelper.registerKeyMapping(new KeyMapping("key.autogamble.settings", InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_F9, category));
@@ -128,7 +143,7 @@ public final class AutoGambleClient implements ClientModInitializer {
                             + ", Lifetime Customers: " + stats.customers().size()));
                     return 1;
                 }))));
-        LOGGER.info("[AutoGamble] 1.2.3 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
+        LOGGER.info("[AutoGamble] 1.2.4 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
     }
     private void receive(Component message, ReceivedMessage.Channel channel) {
         var client = Minecraft.getInstance();
@@ -138,8 +153,10 @@ public final class AutoGambleClient implements ClientModInitializer {
         if (!dispatcher.connected()) return;
         syncSession(client);
         refreshConfig();
-        dispatcher.receiveFailure(new ReceivedMessage(message.getString(), channel));
-        var outcome = gamble.receive(new ReceivedMessage(message.getString(), channel), client.player.getGameProfile().name(), System.nanoTime(), activeConfig);
+        var received = new ReceivedMessage(message.getString(), channel);
+        dispatcher.receiveFailure(received);
+        tipping.receiveConfirmation(received, System.currentTimeMillis());
+        var outcome = gamble.receive(received, client.player.getGameProfile().name(), System.nanoTime(), activeConfig);
         if (diagnostics && outcome != GambleManager.Outcome.IGNORED)
             client.player.sendSystemMessage(Component.literal("[AutoGamble] " + gamble.lastIncoming()));
     }
@@ -187,10 +204,21 @@ public final class AutoGambleClient implements ClientModInitializer {
         if (!connected) { resetSession(); return; }
         var config = activeConfig;
         long now = System.nanoTime();
+        tipping.tick(System.currentTimeMillis());
         gamble.tick(now, config);
-        if (!config.enabled) { cancelWork(); return; }
+        if (!config.tippingDisclosureAcknowledged) {
+            cancelWork();
+            if (client.gui.screen() == null) client.gui.setScreen(TippingScreens.disclosure(settingsContext(client)));
+            return;
+        }
         dispatcher.beginTick();
         payouts.tick(now, config, dispatcher);
+        if (!config.enabled) {
+            dispatcher.cancelDiscovery();
+            autoPay.reset();
+            selection.reset();
+            return;
+        }
         gamble.spam.tick(now, config, dispatcher::sendWarning);
         follow.tick(config, now, dispatcher::sendFollow);
         balanceRules.tick(config, knownBalance, now, System.currentTimeMillis(),
@@ -200,12 +228,15 @@ public final class AutoGambleClient implements ClientModInitializer {
     private void cancelWork() { if (dispatcher != null) dispatcher.cancelDiscovery(); autoPay.reset(); payouts.cancel(); selection.reset(); }
     private void openSettings(Minecraft client) {
         if (client.gui.screen() instanceof AutoGambleSettingsScreen) return;
-        var context = new SettingsContext(configs, this::refreshConfig, selection::reset,
+        client.gui.setScreen(new AutoGambleSettingsScreen(null, settingsContext(client)));
+    }
+    private SettingsContext settingsContext(Minecraft client) {
+        return new SettingsContext(configs, this::refreshConfig, selection::reset,
                 () -> "Candidates: " + dispatcher.eligiblePlayers().size() + "  •  Paid: " + selection.paidUsernames().size()
                         + "  •  Payouts: " + payments.size() + "  •  Patterns: " + parser.enabledCount(),
                 () -> client.player == null ? "" : client.player.getGameProfile().name(), payerHistory::reset, follow::clearHistory,
-                this::automationStatus, () -> analytics.snapshot(System.currentTimeMillis()), history::snapshot, history::refresh);
-        client.gui.setScreen(new AutoGambleSettingsScreen(null, context));
+                this::automationStatus, () -> analytics.snapshot(System.currentTimeMillis()), history::snapshot, history::refresh,
+                tipping::snapshot, () -> tipping.requestPermanentDisable(activeConfig, payments, System.nanoTime()));
     }
     private String automationStatus() {
         var c = activeConfig; var data = history.snapshot();
@@ -226,6 +257,7 @@ public final class AutoGambleClient implements ClientModInitializer {
     }
     private void resetSession() {
         knownBalance.invalidate(); soundAlerts.resetSession();
+        if (tipping != null) tipping.resetSession();
         if (analytics != null) analytics.resetSession(System.currentTimeMillis());
         if (follow != null) follow.resetSession(); if (dispatcher != null) dispatcher.resetSession();
         cancelWork(); gamble.reset(); lastConnection = null; lastWorld = null;

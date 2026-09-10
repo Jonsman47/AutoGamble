@@ -6,7 +6,7 @@ import java.util.ArrayDeque;
 
 /** Bounded client-thread FIFO. Payouts remain here until dispatched or explicitly cancelled. */
 public final class PaymentQueue {
-    public enum Purpose { ADVERTISEMENT, WINNER_PAYOUT }
+    public enum Purpose { ADVERTISEMENT, WINNER_PAYOUT, LOSING_BET_TIP, TIP_DISABLE_PURCHASE }
     public record Payment(String username, BigDecimal amount, Purpose purpose, long dueNanos) {
         public Payment {
             if (username == null || !username.matches("[A-Za-z0-9_]{3,16}")) throw new IllegalArgumentException("Invalid username");

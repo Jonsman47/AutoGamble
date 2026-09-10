@@ -9,14 +9,14 @@ import static org.junit.jupiter.api.Assertions.*;
 class Version121ConfigTest {
     @TempDir Path dir;
     @Test void newDefaultsAreSafeAndDocumented() {
-        var c=new AutoGambleConfig();assertEquals(7,c.configVersion);assertTrue(c.paymentSoundAlertsEnabled);
+        var c=new AutoGambleConfig();assertEquals(8,c.configVersion);assertTrue(c.paymentSoundAlertsEnabled);
         assertEquals(250,c.minimumAlertSpacingMs);assertEquals(1800,c.autoPayConversionWindowSeconds);assertEquals(1800,c.autoPayAttributionDurationSeconds);
         assertEquals(5,c.paymentAlertTiers.size());assertTrue(c.dryRunMode);assertFalse(c.autoPayEnabled);assertFalse(c.gambleEnabled);
     }
     @Test void versionSixMigrationPreservesSettingsAndAddsDefaults() throws Exception {
         Path p=dir.resolve("autogamble.json");Files.writeString(p,"{\"configVersion\":6,\"dryRunMode\":false,\"autoPayAmount\":77,\"winChance\":0.31,\"autoFollowGoodCustomersEnabled\":true}");
         var m=new ConfigManager(p,org.slf4j.LoggerFactory.getLogger("test"));m.load();var c=m.snapshot();
-        assertEquals(7,c.configVersion);assertFalse(c.dryRunMode);assertEquals(77,c.autoPayAmount);assertEquals(.31,c.winChance);assertTrue(c.autoFollowGoodCustomersEnabled);assertTrue(c.paymentSoundAlertsEnabled);
+        assertEquals(8,c.configVersion);assertFalse(c.dryRunMode);assertEquals(77,c.autoPayAmount);assertEquals(.31,c.winChance);assertTrue(c.autoFollowGoodCustomersEnabled);assertTrue(c.paymentSoundAlertsEnabled);
     }
     @Test void soundAndRoiSettingsPersist() {
         Path p=dir.resolve("autogamble.json");var m=new ConfigManager(p,org.slf4j.LoggerFactory.getLogger("test"));m.load();m.update(c->{

@@ -197,10 +197,10 @@ final class RecentPaymentsScreen extends ScrollableReportScreen<PaymentHistory.T
                 minecraft.gui.setScreen(new RecentPaymentFiltersScreen(this, draft))).bounds(x, y, width, 20).build());
     }
 
-    @Override protected String header() { return "Time | Direction | Player | Amount"; }
+    @Override protected String header() { return "Time | Direction | Player | Amount | Source"; }
     @Override protected String rowText(PaymentHistory.Transaction row) {
         return TIME.format(Instant.ofEpochMilli(row.timestamp())) + " | " + row.direction() + " | "
-                + row.player() + " | " + MoneyValues.display(row.amount());
+                + row.player() + " | " + MoneyValues.display(row.amount()) + " | " + row.source();
     }
 }
 
