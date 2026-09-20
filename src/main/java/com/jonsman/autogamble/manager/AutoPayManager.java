@@ -49,7 +49,7 @@ public final class AutoPayManager {
             }
             invalidAmountReported = false;
             var candidates = environment.eligiblePlayers();
-            var target = selection.select(candidates, config.preferUnpaidPlayers, playerRandom);
+            var target = selection.select(candidates, config.preferUnpaidPlayers, playerRandom, nowNanos);
             if (target.isEmpty()) {
                 if (!emptyReported) LOG.info("[AutoGamble] No valid Auto Pay player found after 10 random prefix attempts");
                 state = "NO_CANDIDATES"; emptyReported = true;
@@ -58,7 +58,7 @@ public final class AutoPayManager {
             emptyReported = false;
             if (environment.dispatch(target.get(), amount)) {
                 state = config.dryRunMode ? "SIMULATED" : "DISPATCHED";
-                selection.markPaid(target.get().username());
+                selection.markPaid(target.get().username(), nowNanos);
                 LOG.info("[AutoGamble] {} /pay {} {}", config.dryRunMode ? "DRY RUN simulated" : "Dispatched", target.get().username(), amount);
             } else state = "DISPATCH_DEFERRED";
         } catch (RuntimeException e) {

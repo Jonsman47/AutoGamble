@@ -28,6 +28,12 @@ public final class ConfigManager {
                 JsonElement root = JsonParser.parseString(Files.readString(path));
                 if (!root.isJsonObject()) throw new JsonParseException("Expected a JSON object");
                 JsonObject object = root.getAsJsonObject();
+                if (object.has("leaderboardMaximumBalance") && !object.get("leaderboardMaximumBalance").isJsonNull()) {
+                    if (!object.get("leaderboardMaximumBalance").isJsonPrimitive()
+                            || !object.getAsJsonPrimitive("leaderboardMaximumBalance").isString())
+                        throw new JsonParseException("Leaderboard maximum must be a string or null");
+                    MoneyValues.parse(object.get("leaderboardMaximumBalance").getAsString());
+                }
                 // Reject coercions such as strings used as booleans or numbers.
                 JsonObject defaults = GSON.toJsonTree(config).getAsJsonObject();
                 for (var entry : defaults.entrySet()) {
@@ -64,7 +70,9 @@ public final class ConfigManager {
                         }
                         continue;
                     }
-                    if (entry.getKey().equals("autoFollowThreshold") || entry.getKey().equals("recentMinimumAmount")) {
+                    if (entry.getKey().equals("autoFollowThreshold") || entry.getKey().equals("recentMinimumAmount")
+                            || entry.getKey().equals("leaderboardMinimumBalance") || entry.getKey().equals("leaderboardMaximumBalance")) {
+                        if (entry.getKey().equals("leaderboardMaximumBalance") && value.isJsonNull()) continue;
                         MoneyValues.parse(value.getAsString()); continue;
                     }
                     if (!value.isJsonPrimitive()) throw new JsonParseException("Invalid " + entry.getKey());
@@ -73,7 +81,7 @@ public final class ConfigManager {
                         throw new JsonParseException("Wrong type: " + entry.getKey());
                 }
                 int version = object.has("configVersion") ? object.get("configVersion").getAsBigDecimal().intValueExact() : 0;
-                for (String key : new String[]{"recentMaxLines", "storedTransactionHistoryLimit", "spamPaymentThreshold", "spamPaymentWindowSeconds", "spamWarningCooldownSeconds", "minimumPrefixLength", "maximumPrefixLength", "winnerDelayMinimumMs", "winnerDelayMaximumMs", "receiptDeduplicationWindowMs", "outgoingPaymentTrackingWindowMs", "minimumAlertSpacingMs", "autoPayConversionWindowSeconds", "autoPayAttributionDurationSeconds"}) {
+                for (String key : new String[]{"recentMaxLines", "storedTransactionHistoryLimit", "spamPaymentThreshold", "spamPaymentWindowSeconds", "spamWarningCooldownSeconds", "minimumPrefixLength", "maximumPrefixLength", "smartRandomWeight", "moneyLeaderboardWeight", "economyActiveWeight", "experimentalWeight", "winnerDelayMinimumMs", "winnerDelayMaximumMs", "receiptDeduplicationWindowMs", "outgoingPaymentTrackingWindowMs", "minimumAlertSpacingMs", "autoPayConversionWindowSeconds", "autoPayAttributionDurationSeconds"}) {
                     if (object.has(key)) object.get(key).getAsBigDecimal().longValueExact();
                 }
                 if (version > 8) {
@@ -97,7 +105,7 @@ public final class ConfigManager {
     private void migrate(JsonObject object, int version) {
         if (version < 0) throw new JsonParseException("Negative configVersion");
         // Version 0 means an unversioned file. Missing fields retain constructor defaults.
-        if (version <= 7) object.addProperty("configVersion", 8);
+                if (version <= 7) object.addProperty("configVersion", 8);
     }
     public void update(Consumer<AutoGambleConfig> editor) {
         if (futureVersion) {

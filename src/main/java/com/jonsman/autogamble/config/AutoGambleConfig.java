@@ -41,6 +41,9 @@ public final class AutoGambleConfig {
     public boolean preferUnpaidPlayers = true;
     public boolean excludeNumericOnlyNames = true;
     public int minimumPrefixLength = 1, maximumPrefixLength = 3;
+    public int smartRandomWeight = 50, moneyLeaderboardWeight = 30, economyActiveWeight = 15, experimentalWeight = 5;
+    public java.math.BigDecimal leaderboardMinimumBalance = new java.math.BigDecimal("500000000");
+    public java.math.BigDecimal leaderboardMaximumBalance = null;
     public double minimumBet = 1, maximumBet = 1_000_000;
     public long winnerDelayMinimumMs = 200, winnerDelayMaximumMs = 700;
 
@@ -77,6 +80,16 @@ public final class AutoGambleConfig {
         if (!com.jonsman.autogamble.payment.SpamWarningCommand.validText(spamWarningMessage)) spamWarningMessage = DEFAULT_SPAM_MESSAGE;
         minimumPrefixLength = Math.clamp(minimumPrefixLength, 1, 3);
         maximumPrefixLength = Math.clamp(maximumPrefixLength, minimumPrefixLength, 3);
+        smartRandomWeight = Math.clamp(smartRandomWeight, 0, 100);
+        moneyLeaderboardWeight = Math.clamp(moneyLeaderboardWeight, 0, 100);
+        economyActiveWeight = Math.clamp(economyActiveWeight, 0, 100);
+        experimentalWeight = Math.clamp(experimentalWeight, 0, 100);
+        if (smartRandomWeight + moneyLeaderboardWeight + economyActiveWeight + experimentalWeight != 100) {
+            smartRandomWeight = 50; moneyLeaderboardWeight = 30; economyActiveWeight = 15; experimentalWeight = 5;
+        }
+        if (!MoneyValues.valid(leaderboardMinimumBalance, false)) leaderboardMinimumBalance = new java.math.BigDecimal("500000000");
+        if (leaderboardMaximumBalance != null && (!MoneyValues.valid(leaderboardMaximumBalance, false)
+                || leaderboardMaximumBalance.compareTo(leaderboardMinimumBalance) < 0)) leaderboardMaximumBalance = null;
         receiptDeduplicationWindowMs = Math.clamp(receiptDeduplicationWindowMs, 100, 60000);
         outgoingPaymentTrackingWindowMs = Math.clamp(outgoingPaymentTrackingWindowMs, 1000, 120000);
         if (incomingPaymentPatterns == null) incomingPaymentPatterns = new java.util.ArrayList<>();

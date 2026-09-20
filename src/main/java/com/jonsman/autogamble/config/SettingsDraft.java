@@ -15,6 +15,12 @@ public final class SettingsDraft {
         ATTRIBUTION_DURATION("autoPayAttributionDurationSeconds", "Attribution Duration (s)", true),
         PREFIX_MIN("minimumPrefixLength", "Minimum Prefix Length", true),
         PREFIX_MAX("maximumPrefixLength", "Maximum Prefix Length", true),
+        SMART_WEIGHT("smartRandomWeight", "Smart Random (%)", true),
+        MONEY_WEIGHT("moneyLeaderboardWeight", "Money Leaderboard (%)", true),
+        ECONOMY_WEIGHT("economyActiveWeight", "Economy Active (%)", true),
+        EXPERIMENTAL_WEIGHT("experimentalWeight", "Experimental (%)", true),
+        LEADERBOARD_MIN("leaderboardMinimumBalance", "Minimum Balance", false),
+        LEADERBOARD_MAX("leaderboardMaximumBalance", "Maximum (blank = no maximum)", false),
         SPAM_THRESHOLD("spamPaymentThreshold", "Spam Payment Threshold", true),
         SPAM_WINDOW("spamPaymentWindowSeconds", "Spam Detection Window (s)", true),
         SPAM_COOLDOWN("spamWarningCooldownSeconds", "Warning Cooldown (s)", true),
@@ -49,7 +55,7 @@ public final class SettingsDraft {
             try {
                 var moneyField = AutoGambleConfig.class.getField(f.key);
                 if (moneyField.getType() == BigDecimal.class) {
-                    moneyField.set(working, f == Field.RECENT_MAX && value.isBlank() ? null : MoneyValues.parse(value)); continue;
+                    moneyField.set(working, (f == Field.RECENT_MAX || f == Field.LEADERBOARD_MAX) && value.isBlank() ? null : MoneyValues.parse(value)); continue;
                 }
                 if (value.length() > 32 || !value.matches("[0-9]+(?:\\.[0-9]+)?")) throw new IllegalArgumentException();
                 BigDecimal n = new BigDecimal(value);

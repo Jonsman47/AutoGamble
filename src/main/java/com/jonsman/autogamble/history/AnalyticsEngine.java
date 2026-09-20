@@ -4,6 +4,7 @@ import com.google.gson.*;
 import com.jonsman.autogamble.config.AutoGambleConfig;
 import com.jonsman.autogamble.config.MoneyValues;
 import com.jonsman.autogamble.payment.OutgoingPaymentTracker;
+import com.jonsman.autogamble.targeting.TargetMethod;
 import org.slf4j.Logger;
 import java.io.IOException;
 import java.math.BigDecimal;
@@ -18,6 +19,13 @@ public final class AnalyticsEngine implements AutoCloseable {
     private static final BigDecimal ZERO = BigDecimal.ZERO;
     public record Customer(String player, BigDecimal paidBy, BigDecimal paidBack, BigDecimal net,
                            long bets, long wins, long losses, long lastPayment) {}
+    public record MethodStats(TargetMethod method, long attempts, long validCandidates, long offlineRejected,
+                              long paymentsSent, int uniquePlayers, long repeatPrevented, int conversions,
+                              BigDecimal attributedRevenue, BigDecimal advertisingSpend) {
+        public double conversionPercent() { return paymentsSent == 0 ? 0 : conversions * 100.0 / paymentsSent; }
+        public BigDecimal profit() { return attributedRevenue.subtract(advertisingSpend); }
+        public BigDecimal profitPerThousand() { return paymentsSent == 0 ? ZERO : profit().multiply(BigDecimal.valueOf(1000)).divide(BigDecimal.valueOf(paymentsSent), 2, RoundingMode.HALF_UP); }
+    }
     public record Snapshot(long sessionStarted, long now, long paymentsReceived, BigDecimal moneyReceived,
                            BigDecimal moneyPaid, BigDecimal gamblingProfit, BigDecimal advertisingCost,
                            long bets, long wins, long losses, BigDecimal gamblingStake, int uniqueCustomers, int returningCustomers,
@@ -39,6 +47,12 @@ public final class AnalyticsEngine implements AutoCloseable {
         String player; BigDecimal paidBy = ZERO, paidBack = ZERO; long bets, wins, losses, lastPayment;
     }
     private static final class Touch { long time; BigDecimal cost = ZERO; }
+    private static final class TargetTouch { String method; long time, convertedUntil; }
+    private static final class MethodData {
+        long attempts, validCandidates, offlineRejected, paymentsSent, repeatPrevented;
+        Set<String> uniquePlayers = new HashSet<>(), convertedPlayers = new HashSet<>();
+        BigDecimal attributedRevenue = ZERO, advertisingSpend = ZERO;
+    }
     private static final class Data {
         int version = 1;
         Map<String, CustomerData> customers = new HashMap<>();
@@ -48,6 +62,8 @@ public final class AnalyticsEngine implements AutoCloseable {
         long tipsPaid; BigDecimal tipAmount = ZERO;
         Map<String, Touch> touches = new HashMap<>();
         Map<String, Long> convertedUntil = new HashMap<>();
+        Map<String, MethodData> targeting = new HashMap<>();
+        Map<String, TargetTouch> targetingTouches = new HashMap<>();
     }
     private static final class SignedMoneyAdapter implements JsonSerializer<BigDecimal>, JsonDeserializer<BigDecimal> {
         @Override public JsonElement serialize(BigDecimal value, java.lang.reflect.Type type, JsonSerializationContext context) {
@@ -100,6 +116,7 @@ public final class AnalyticsEngine implements AutoCloseable {
         CustomerData customer = data.customers.computeIfAbsent(key, ignored -> new CustomerData());
         customer.player = player; customer.paidBy = customer.paidBy.add(amount); customer.lastPayment = now;
         Attribution attribution = attribution(key, now, c, true);
+        targetingIncoming(key, amount, now, c);
         if (attribution.session) { sessionAttributedRevenue = sessionAttributedRevenue.add(amount); sessionAttributedProfit = sessionAttributedProfit.add(amount); }
         if (attribution.lifetime) { data.attributedRevenue = data.attributedRevenue.add(amount); data.attributedProfit = data.attributedProfit.add(amount); }
         changed();
@@ -145,6 +162,39 @@ public final class AnalyticsEngine implements AutoCloseable {
             sessionConvertedUntil.remove(key);
         }
         changed();
+    }
+
+    public synchronized void targetingAttempt(TargetMethod method) { method(method).attempts++; changed(); }
+    public synchronized void targetingValidCandidate(TargetMethod method) { method(method).validCandidates++; changed(); }
+    public synchronized void targetingOfflineRejected(TargetMethod method) { method(method).offlineRejected++; changed(); }
+    public synchronized void targetingRepeatPrevented(TargetMethod method) { method(method).repeatPrevented++; changed(); }
+    public synchronized void targetingPayment(TargetMethod method, String player, BigDecimal amount, long now) {
+        String key = key(player); if (method == null || key == null || amount == null || amount.signum() <= 0) return;
+        MethodData stats = method(method); stats.paymentsSent++; stats.uniquePlayers.add(key); stats.advertisingSpend = stats.advertisingSpend.add(amount);
+        TargetTouch touch = new TargetTouch(); touch.method = method.name(); touch.time = now; data.targetingTouches.put(key, touch); changed();
+    }
+    public synchronized List<MethodStats> targetingSnapshot() {
+        List<MethodStats> result = new ArrayList<>();
+        for (TargetMethod method : TargetMethod.values()) {
+            MethodData value = method(method);
+            result.add(new MethodStats(method, value.attempts, value.validCandidates, value.offlineRejected,
+                    value.paymentsSent, value.uniquePlayers.size(), value.repeatPrevented, value.convertedPlayers.size(),
+                    value.attributedRevenue, value.advertisingSpend));
+        }
+        return List.copyOf(result);
+    }
+    private MethodData method(TargetMethod method) { return data.targeting.computeIfAbsent(method.name(), ignored -> new MethodData()); }
+    private void targetingIncoming(String key, BigDecimal amount, long now, AutoGambleConfig c) {
+        TargetTouch touch = data.targetingTouches.get(key); if (touch == null) return;
+        TargetMethod targetMethod;
+        try { targetMethod = TargetMethod.valueOf(touch.method); } catch (RuntimeException ex) { data.targetingTouches.remove(key); return; }
+        if (touch.convertedUntil == 0) {
+            if (now - touch.time > c.autoPayConversionWindowSeconds * 1000L) { data.targetingTouches.remove(key); return; }
+            touch.convertedUntil = now + c.autoPayAttributionDurationSeconds * 1000L;
+            method(targetMethod).convertedPlayers.add(key);
+        }
+        if (now <= touch.convertedUntil) method(targetMethod).attributedRevenue = method(targetMethod).attributedRevenue.add(amount);
+        else data.targetingTouches.remove(key);
     }
 
     private Attribution attribution(String key, long now, AutoGambleConfig c, boolean mayConvert) {
@@ -201,6 +251,14 @@ public final class AnalyticsEngine implements AutoCloseable {
     private static void repair(Data d) throws IOException {
         if (d.customers == null || d.uniqueAdvertised == null || d.converted == null || d.touches == null || d.convertedUntil == null
                 || d.advertisingSpend == null || d.attributedRevenue == null || d.attributedProfit == null) throw new IOException("Missing analytics fields");
+        if (d.targeting == null) d.targeting = new HashMap<>();
+        if (d.targetingTouches == null) d.targetingTouches = new HashMap<>();
+        for (MethodData value : d.targeting.values()) {
+            if (value.uniquePlayers == null) value.uniquePlayers = new HashSet<>();
+            if (value.convertedPlayers == null) value.convertedPlayers = new HashSet<>();
+            if (value.attributedRevenue == null) value.attributedRevenue = ZERO;
+            if (value.advertisingSpend == null) value.advertisingSpend = ZERO;
+        }
         if (d.tipAmount == null) d.tipAmount = ZERO;
         for (CustomerData c : d.customers.values()) if (c == null || c.paidBy == null || c.paidBack == null) throw new IOException("Bad customer data");
     }

@@ -5,8 +5,9 @@ import org.slf4j.LoggerFactory;
 
 import com.jonsman.autogamble.manager.PlayerSelectionManager;
 import com.jonsman.autogamble.manager.PlayerSelectionManager.Candidate;
+import com.jonsman.autogamble.targeting.*;
 import net.minecraft.client.Minecraft;
-import java.util.List;
+import java.util.*;
 
 /** Uses the vanilla command API only; never constructs custom packets. */
 public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, PaymentSender {
@@ -32,11 +33,29 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
     private PrefixPlayerDiscovery discovery = new PrefixPlayerDiscovery(prefixRandom, 1, 3);
     private int prefixMin = 1, prefixMax = 3;
     private final FailedTargetBlacklist failed = new FailedTargetBlacklist();
+    private final LeaderboardService leaderboards;
+    private final java.util.Random targetingRandom = new java.util.Random();
+    private TargetMethod activeMethod;
+    private List<String> externalCandidates = List.of();
+    private int externalIndex;
+    private long verificationGeneration, verificationRequestedAt, nextVerificationAt;
+    private boolean verificationPending;
+    private Candidate verifiedTarget;
+    private boolean smartCandidatesCounted;
+    private boolean targetingCycleComplete;
+    private final EnumSet<TargetMethod> exhaustedMethods = EnumSet.noneOf(TargetMethod.class);
+    private static final long VERIFICATION_TIMEOUT = 3_000_000_000L, VERIFICATION_INTERVAL = 250_000_000L;
     private boolean sendingPayment;
     private final DispatchGate gate = new DispatchGate();
     public MinecraftPaymentDispatcher(Minecraft client, PlayerSelectionManager selection, OutgoingPaymentTracker outgoing,
                                      java.util.function.Supplier<com.jonsman.autogamble.config.AutoGambleConfig> config) {
+        this(client, selection, outgoing, config, null);
+    }
+    public MinecraftPaymentDispatcher(Minecraft client, PlayerSelectionManager selection, OutgoingPaymentTracker outgoing,
+                                     java.util.function.Supplier<com.jonsman.autogamble.config.AutoGambleConfig> config,
+                                     LeaderboardService leaderboards) {
         this.client = client; this.selection = selection; this.outgoing = outgoing; this.config = config;
+        this.leaderboards = leaderboards;
     }
     public void beginTick() { gate.beginTick(); }
     @Override public boolean connected() {
@@ -44,12 +63,12 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
                 && client.getConnection() != null && client.getConnection().getConnection().isConnected();
     }
     @Override public boolean inputBlocked() { return client == null || client.gui.screen() != null || client.gui.overlay() != null; }
-    public void resetSession() { discovery.reset(); failed.reset(); }
-    public void cancelDiscovery() { discovery.cancel(); }
-    @Override public void finishDiscovery() { discovery.cancel(); }
-    public String playerSource() { return "RANDOM_PREFIX_SUGGESTIONS"; }
+    public void resetSession() { discovery.reset(); failed.reset(); resetTargetingCycle(); }
+    public void cancelDiscovery() { discovery.cancel(); resetTargetingCycle(); }
+    @Override public void finishDiscovery() { discovery.cancel(); resetTargetingCycle(); }
+    public String playerSource() { return activeMethod == null ? "WEIGHTED_TARGETING" : activeMethod.name(); }
     public String discoveryStatus() {
-        return "Prefix Length Range: " + config.get().minimumPrefixLength + "\u2013" + config.get().maximumPrefixLength
+        return "Method: " + (activeMethod == null ? "waiting" : activeMethod.label()) + ", Prefix Length Range: " + config.get().minimumPrefixLength + "\u2013" + config.get().maximumPrefixLength
             + ", Last Prefix Length: " + discovery.lastLength() + ", Prefix Attempts This Cycle: " + discovery.attempts()
             + ", Last Auto Pay Prefix: " + discovery.prefix() + ", Last Candidate Count: " + discovery.count()
             + ", Last Selected Player: " + discovery.selected() + ", Numeric-Only Filter: "
@@ -63,10 +82,13 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
     @Override public boolean prepare(long now) {
         if (!connected() || inputBlocked()) return false;
         var c = config.get();
+        if (targetingCycleComplete) return true;
         if (prefixMin != c.minimumPrefixLength || prefixMax != c.maximumPrefixLength) {
             discovery.cancel(); prefixMin = c.minimumPrefixLength; prefixMax = c.maximumPrefixLength;
             discovery = new PrefixPlayerDiscovery(prefixRandom, prefixMin, prefixMax);
         }
+        if (activeMethod == null && !chooseMethod(c, now)) return targetingCycleComplete;
+        if (activeMethod != TargetMethod.SMART_RANDOM) return prepareExternal(now, c);
         var activeDiscovery = discovery;
         discovery.poll(now, selection, c.preferUnpaidPlayers).ifPresent(request -> {
             var connection = client.getConnection();
@@ -86,18 +108,104 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
                 discovery.complete(request.token(), List.of(), local, c.excludeNumericOnlyNames, failed, selection, c.preferUnpaidPlayers, now);
             }
         });
+        if (discovery.ready() && !smartCandidatesCounted) {
+            smartCandidatesCounted = true;
+            if (analytics != null) for (int i = 0; i < discovery.candidates().size(); i++) analytics.targetingValidCandidate(activeMethod);
+        }
+        if (discovery.ready() && discovery.candidates().isEmpty()) {
+            exhaustedMethods.add(TargetMethod.SMART_RANDOM); discovery.cancel(); activeMethod = null;
+            return !chooseMethod(c, now) && targetingCycleComplete;
+        }
         return discovery.ready();
     }
     @Override public List<Candidate> eligiblePlayers() {
         if (!connected()) return List.of();
+        if (activeMethod != TargetMethod.SMART_RANDOM)
+            return verifiedTarget == null ? List.of() : List.of(verifiedTarget);
         return discovery.candidates().stream().filter(p -> PrefixPlayerDiscovery.validName(p.username(), client.player.getGameProfile().name(), config.get().excludeNumericOnlyNames)
                 && !failed.contains(p.username(), System.nanoTime())).toList();
     }
     @Override public boolean dispatch(Candidate target, String amount) {
         if (!connected() || inputBlocked() || !client.isSameThread() || !eligiblePlayers().contains(target)) return false;
         if (amount == null || !amount.matches("[0-9]+(?:\\.[0-9]{1,2})?")) return false;
-        discovery.selected(target.username());
-        return sendPayment(target.username(), new java.math.BigDecimal(amount), OutgoingPaymentTracker.Source.ADVERTISING) == Result.SENT;
+        if (activeMethod == TargetMethod.SMART_RANDOM) discovery.selected(target.username());
+        TargetMethod suppliedBy = activeMethod;
+        boolean sent = sendPayment(target.username(), new java.math.BigDecimal(amount), OutgoingPaymentTracker.Source.ADVERTISING) == Result.SENT;
+        if (sent && analytics != null && !config.get().dryRunMode)
+            analytics.targetingPayment(suppliedBy, target.username(), new java.math.BigDecimal(amount), System.currentTimeMillis());
+        return sent;
+    }
+
+    private boolean chooseMethod(AutoGambleConfig c, long now) {
+        String local = client.player.getGameProfile().name();
+        LeaderboardSnapshot data = leaderboards == null ? LeaderboardSnapshot.empty() : leaderboards.snapshot();
+        List<String> money = TargetingCandidates.money(data, c, local, selection, now);
+        List<String> economy = TargetingCandidates.economy(data, local, selection, now);
+        EnumSet<TargetMethod> available = EnumSet.noneOf(TargetMethod.class);
+        if (c.smartRandomWeight > 0) available.add(TargetMethod.SMART_RANDOM);
+        if (c.moneyLeaderboardWeight > 0 && !money.isEmpty()) available.add(TargetMethod.MONEY_LEADERBOARD);
+        if (c.economyActiveWeight > 0 && !economy.isEmpty()) available.add(TargetMethod.ECONOMY_ACTIVE);
+        if (c.experimentalWeight > 0 && (!money.isEmpty() || !economy.isEmpty())) available.add(TargetMethod.EXPERIMENTAL);
+        available.removeAll(exhaustedMethods);
+        var selected = WeightedTargetSelector.select(c, available, targetingRandom);
+        if (selected.isEmpty()) { targetingCycleComplete = true; return false; }
+        activeMethod = selected.get();
+        if (analytics != null) analytics.targetingAttempt(activeMethod);
+        externalCandidates = switch (activeMethod) {
+            case MONEY_LEADERBOARD -> new ArrayList<>(money);
+            case ECONOMY_ACTIVE -> new ArrayList<>(economy);
+            case EXPERIMENTAL -> {
+                LinkedHashSet<String> combined = new LinkedHashSet<>(); combined.addAll(economy); combined.addAll(money);
+                yield new ArrayList<>(combined);
+            }
+            case SMART_RANDOM -> List.of();
+        };
+        if (!externalCandidates.isEmpty()) Collections.shuffle(externalCandidates, targetingRandom);
+        return true;
+    }
+    private boolean prepareExternal(long now, AutoGambleConfig c) {
+        if (verifiedTarget != null) return true;
+        if (verificationPending) {
+            if (now - verificationRequestedAt < VERIFICATION_TIMEOUT) return false;
+            verificationPending = false; verificationGeneration++; nextVerificationAt = now + VERIFICATION_INTERVAL;
+            if (analytics != null) analytics.targetingOfflineRejected(activeMethod);
+        }
+        if (now < nextVerificationAt) return false;
+        while (externalIndex < externalCandidates.size()) {
+            String name = externalCandidates.get(externalIndex++);
+            if (selection.recentlyPaid(name, now)) { if (analytics != null) analytics.targetingRepeatPrevented(activeMethod); continue; }
+            if (failed.contains(name, now) || name.equalsIgnoreCase(client.player.getGameProfile().name())) continue;
+            requestExactVerification(name, now, c); return false;
+        }
+        // The selected pool was entirely offline; reselect from the remaining enabled methods.
+        exhaustedMethods.add(activeMethod); activeMethod = null; externalCandidates = List.of(); externalIndex = 0;
+        return !chooseMethod(c, now) && targetingCycleComplete;
+    }
+    private void requestExactVerification(String name, long now, AutoGambleConfig c) {
+        var connection = client.getConnection(); long token = ++verificationGeneration;
+        verificationPending = true; verificationRequestedAt = now;
+        String command = "/pay " + name;
+        try {
+            var context = connection.getCommands().parse(command.substring(1), connection.getSuggestionsProvider()).getContext().build(command);
+            connection.getSuggestionsProvider().customSuggestion(context).whenComplete((result, error) -> client.execute(() -> {
+                if (token != verificationGeneration || client.getConnection() != connection) return;
+                verificationPending = false; nextVerificationAt = System.nanoTime() + VERIFICATION_INTERVAL;
+                boolean exact = error == null && OnlineVerification.exactUsername(
+                        result.getList().stream().map(s -> s.getText()).toList(), name, client.player.getGameProfile().name());
+                if (exact && PrefixPlayerDiscovery.validName(name, client.player.getGameProfile().name(), c.excludeNumericOnlyNames)
+                        && !failed.contains(name, System.nanoTime()) && !selection.recentlyPaid(name, System.nanoTime())) {
+                    verifiedTarget = new Candidate(null, name); if (analytics != null) analytics.targetingValidCandidate(activeMethod);
+                } else if (analytics != null) analytics.targetingOfflineRejected(activeMethod);
+            }));
+        } catch (RuntimeException ex) {
+            verificationPending = false; nextVerificationAt = now + VERIFICATION_INTERVAL;
+            if (analytics != null) analytics.targetingOfflineRejected(activeMethod);
+        }
+    }
+    private void resetTargetingCycle() {
+        verificationGeneration++; verificationPending = false; verifiedTarget = null; activeMethod = null;
+        externalCandidates = List.of(); externalIndex = 0; nextVerificationAt = 0; smartCandidatesCounted = false;
+        targetingCycleComplete = false; exhaustedMethods.clear();
     }
    public boolean sendWarning(String username, String message) {
       AutoGambleConfig c = this.config.get();

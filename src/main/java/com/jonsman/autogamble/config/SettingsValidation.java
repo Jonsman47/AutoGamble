@@ -30,6 +30,16 @@ public final class SettingsValidation {
         }
         range(errors, "Minimum Prefix Length", c.minimumPrefixLength, 1, 3);
         range(errors, "Maximum Prefix Length", c.maximumPrefixLength, c.minimumPrefixLength, 3);
+        range(errors, "Smart Random percentage", c.smartRandomWeight, 0, 100);
+        range(errors, "Money Leaderboard percentage", c.moneyLeaderboardWeight, 0, 100);
+        range(errors, "Economy Active percentage", c.economyActiveWeight, 0, 100);
+        range(errors, "Experimental percentage", c.experimentalWeight, 0, 100);
+        int targetingTotal = c.smartRandomWeight + c.moneyLeaderboardWeight + c.economyActiveWeight + c.experimentalWeight;
+        if (targetingTotal != 100) errors.add("Targeting percentages must total exactly 100% (currently " + targetingTotal + "%).");
+        if (!MoneyValues.valid(c.leaderboardMinimumBalance, false)) errors.add("Leaderboard minimum balance must be a valid non-negative amount.");
+        if (c.leaderboardMaximumBalance != null && (!MoneyValues.valid(c.leaderboardMaximumBalance, false)
+                || c.leaderboardMinimumBalance != null && c.leaderboardMaximumBalance.compareTo(c.leaderboardMinimumBalance) < 0))
+            errors.add("Leaderboard maximum balance must be at least the minimum, or blank for no maximum.");
         range(errors, "Auto Pay Amount", c.autoPayAmount, .01, 1e9);
         range(errors, "Minimum Pay Delay", c.minimumAutoPayDelaySeconds, .001, 86400);
         range(errors, "Maximum Pay Delay", c.maximumAutoPayDelaySeconds, c.minimumAutoPayDelaySeconds, 86400);

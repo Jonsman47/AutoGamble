@@ -3,6 +3,7 @@ package com.jonsman.autogamble;
 import com.jonsman.autogamble.config.*;
 import com.jonsman.autogamble.manager.*;
 import com.jonsman.autogamble.payment.*;
+import com.jonsman.autogamble.targeting.LeaderboardService;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -49,6 +50,7 @@ public final class AutoGambleClient implements ClientModInitializer {
     private Object lastConnection, lastWorld;
     private long configRevision = -1;
     private MinecraftPaymentDispatcher dispatcher;
+    private LeaderboardService leaderboards;
     private boolean openSettingsRequested;
     private boolean diagnostics;
     private int debugRemaining;
@@ -62,6 +64,7 @@ public final class AutoGambleClient implements ClientModInitializer {
         var dataRoot = FabricLoader.getInstance().getConfigDir().resolve("autogamble");
         history = new com.jonsman.autogamble.history.PaymentHistory(dataRoot, activeConfig);
         analytics = new com.jonsman.autogamble.history.AnalyticsEngine(dataRoot.resolve("data/analytics.json"), LOGGER);
+        leaderboards = new LeaderboardService(dataRoot.resolve("data/leaderboards.json"), LOGGER);
         tipping = new TippingManager((username, amount, source) -> {
             history.record(com.jonsman.autogamble.history.PaymentHistory.Direction.PAID, username, amount, source.name());
             analytics.outgoing(username, amount, source, System.currentTimeMillis());
@@ -85,7 +88,7 @@ public final class AutoGambleClient implements ClientModInitializer {
         gamble.acceptedObserver((payment, first, won, payout, now, config) ->
                 analytics.acceptedGamble(payment.sender(), payment.amount(), first, won, payout, System.currentTimeMillis(), config));
         refreshConfig();
-        dispatcher = new MinecraftPaymentDispatcher(Minecraft.getInstance(), selection, outgoing, () -> activeConfig);
+        dispatcher = new MinecraftPaymentDispatcher(Minecraft.getInstance(), selection, outgoing, () -> activeConfig, leaderboards);
         dispatcher.history(history, knownBalance);
         dispatcher.analytics(analytics);
         dispatcher.tipping(tipping);
@@ -95,7 +98,7 @@ public final class AutoGambleClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> resetSession());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> resetSession());
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> { resetSession(); analytics.close(); history.close(); balanceRules.close(); });
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> { resetSession(); leaderboards.close(); analytics.close(); history.close(); balanceRules.close(); });
         ClientSendMessageEvents.ALLOW_COMMAND.register(command -> {
             var client = Minecraft.getInstance();
             if (help.intercept(command, text -> { if (client.player != null) client.player.sendSystemMessage(Component.literal(text)); })) return false;
@@ -204,6 +207,7 @@ public final class AutoGambleClient implements ClientModInitializer {
         if (!connected) { resetSession(); return; }
         var config = activeConfig;
         long now = System.nanoTime();
+        leaderboards.tick(System.currentTimeMillis());
         tipping.tick(System.currentTimeMillis());
         gamble.tick(now, config);
         if (!config.tippingDisclosureAcknowledged) {
@@ -236,7 +240,8 @@ public final class AutoGambleClient implements ClientModInitializer {
                         + "  •  Payouts: " + payments.size() + "  •  Patterns: " + parser.enabledCount(),
                 () -> client.player == null ? "" : client.player.getGameProfile().name(), payerHistory::reset, follow::clearHistory,
                 this::automationStatus, () -> analytics.snapshot(System.currentTimeMillis()), history::snapshot, history::refresh,
-                tipping::snapshot, () -> tipping.requestPermanentDisable(activeConfig, payments, System.nanoTime()));
+                tipping::snapshot, () -> tipping.requestPermanentDisable(activeConfig, payments, System.nanoTime()),
+                leaderboards::status, leaderboards::refresh, analytics::targetingSnapshot);
     }
     private String automationStatus() {
         var c = activeConfig; var data = history.snapshot();

@@ -51,6 +51,7 @@ public final class AutoGambleSettingsScreen extends Screen {
                         "Tries to pay each known candidate once before repeating.");
                 toggle("Skip Numeric-Only Names", () -> draft.working.excludeNumericOnlyNames, v -> draft.working.excludeNumericOnlyNames = v,
                         "Skips player names made entirely from numbers.");
+                button("Advertising Targeting…", left, row, panel, () -> minecraft.gui.setScreen(new TargetingSettingsScreen(this, context, draft))); row += 21;
                 button("Prefix Length…", left + panel / 2 + 3, row, panel / 2 - 3, () -> { page = 8; rebuildWidgets(); });
                 button("Reset Paid History…", left, row, panel / 2 - 3, () -> minecraft.gui.setScreen(new ConfirmScreen(yes -> {
                     if (yes) context.resetPaid().run(); minecraft.gui.setScreen(this);

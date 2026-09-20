@@ -79,7 +79,7 @@ class AutoPayTest {
         start();
         for (int i = 0; i < 3; i++) tick(due());
         assertEquals(3, env.sent); assertEquals(3, selection.paidUsernames().size());
-        tick(due()); assertEquals(4, env.sent); assertEquals(1, selection.paidUsernames().size());
+        tick(due()); assertEquals(3, env.sent); assertEquals(3, selection.paidUsernames().size());
     }
     @Test void freshFractionalDelayWithinBoundsAfterEveryAttempt() {
         start(); long now = 0; Set<Long> delays = new HashSet<>();
