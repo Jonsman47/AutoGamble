@@ -20,7 +20,7 @@ public final class DonutSmpStatsProvider implements LeaderboardProvider {
     private static String get(HttpClient client, URI uri) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(12))
                 .header("Accept", "text/html,application/xhtml+xml")
-                .header("User-Agent", "AutoGamble-Fabric/1.2.4 (+https://github.com/Jonsman47/AutoGamble)").GET().build();
+                .header("User-Agent", "AutoGamble-Fabric/1.2.5 (+https://github.com/Jonsman47/AutoGamble)").GET().build();
         HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() < 200 || response.statusCode() >= 300 || response.body().length() > 5_000_000)
             throw new IllegalStateException("HTTP " + response.statusCode());
