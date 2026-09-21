@@ -21,6 +21,7 @@ public final class SettingsDraft {
         EXPERIMENTAL_WEIGHT("experimentalWeight", "Experimental (%)", true),
         LEADERBOARD_MIN("leaderboardMinimumBalance", "Minimum Balance", false),
         LEADERBOARD_MAX("leaderboardMaximumBalance", "Maximum (blank = no maximum)", false),
+        BALTOP_SPEED("baltopScanSpeed", "Scan Speed (0 Safe / 1 Normal / 2 Fast)", true),
         SPAM_THRESHOLD("spamPaymentThreshold", "Spam Payment Threshold", true),
         SPAM_WINDOW("spamPaymentWindowSeconds", "Spam Detection Window (s)", true),
         SPAM_COOLDOWN("spamWarningCooldownSeconds", "Warning Cooldown (s)", true),

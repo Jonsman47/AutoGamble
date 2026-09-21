@@ -34,6 +34,9 @@ public final class SettingsValidation {
         range(errors, "Money Leaderboard percentage", c.moneyLeaderboardWeight, 0, 100);
         range(errors, "Economy Active percentage", c.economyActiveWeight, 0, 100);
         range(errors, "Experimental percentage", c.experimentalWeight, 0, 100);
+        if (c.economyActiveWeight != 0 || c.experimentalWeight != 0)
+            errors.add("Retired website methods must be 0%; allocate weight between Smart Random and Baltop.");
+        range(errors, "Baltop scan speed", c.baltopScanSpeed, 0, 2);
         int targetingTotal = c.smartRandomWeight + c.moneyLeaderboardWeight + c.economyActiveWeight + c.experimentalWeight;
         if (targetingTotal != 100) errors.add("Targeting percentages must total exactly 100% (currently " + targetingTotal + "%).");
         if (!MoneyValues.valid(c.leaderboardMinimumBalance, false)) errors.add("Leaderboard minimum balance must be a valid non-negative amount.");

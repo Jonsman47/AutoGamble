@@ -6,7 +6,7 @@ A client-side Fabric mod for DonutSMP with automatic payments, configurable gamb
 
 Requires **Minecraft 26.2**, **Java 25**, **Fabric Loader 0.19.3**, and **Fabric API 0.159.0+26.2**.
 
-1. Download **autogamble-1.2.5.jar** from the [latest GitHub release](https://github.com/Jonsman47/AutoGamble/releases/latest), or build it locally.
+1. Download the current JAR from the [GitHub releases](https://github.com/Jonsman47/AutoGamble/releases), or build it locally.
 2. Put it and Fabric API in your Minecraft `mods` folder. Remove older AutoGamble JARs.
 3. Launch Minecraft and press **F9** to configure it.
 
@@ -14,8 +14,8 @@ Requires **Minecraft 26.2**, **Java 25**, **Fabric Loader 0.19.3**, and **Fabric
 
 ## Features
 
-- **Auto Pay:** weighted targeting across Smart Random Online, public money leaderboards, economy-active players, and an experimental slot. Every candidate is verified online through current `/pay` autocomplete before payment.
-- **Leaderboard targeting:** asynchronously caches public data from donutsmpstats.net and donutstats.org, supports configurable minimum/maximum wealth with K/M/B/T suffixes, and falls back safely when providers are unavailable.
+- **Auto Pay:** weighted Smart Random Online and locally scanned Baltop targeting (50/50 by default). Every selected candidate receives a fresh exact-name `/pay` autocomplete verification before payment.
+- **Scanned Baltop:** explicitly start a tick-driven scan of the in-game `/baltop` inventory. The scanner locates Next Page by item name, records players, balances, rank and source page, and persists progress across restarts. Open **Advertising Targeting → Scanned Baltop** to browse, search, filter, sort, pause, resume, or confirm a reset. The scan temporarily pauses advertising and never needs a website or API key. Its item-text parser should be checked on the live server before relying on the database.
 - **Gambling:** recognizes incoming notices such as `Bob paid you $ 19.8k`. Supports K/M/B/T amounts, configurable win chance, bet limits, payout multiplier, and queued payouts.
 - **First-time bonus:** ON by default, adding **10 percentage points** to a player's first accepted bet, capped at 100%. Payer history persists across restarts. Accepted Dry Run bets also consume the bonus.
 
@@ -51,6 +51,6 @@ Payer history: `config/autogamble-payers.json`
 
 With Java 25, run `gradlew.bat test` then `gradlew.bat build` (Linux/macOS: `sh gradlew`).
 
-Version **1.2.5** adds configurable weighted advertising targets, online verification, cached public leaderboard providers, balance filters, and per-method analytics. Earlier release JARs remain preserved under `releases/`. New builds go to `build/libs/`. See [v1.2.5 notes](docs/PATCH-1.2.5.md).
+Version **1.3.0** replaces the 1.2.5 website experiment with an in-game Baltop scanner and local database. Earlier release JARs and historical source remain preserved. New builds go to `build/libs/`. See [v1.3.0 notes](docs/PATCH-1.3.0.md).
 
 Before publishing each new version, archive the outgoing release's exact published JAR and matching sources JAR under `releases/archive/<version>/`. See the [release checklist](docs/RELEASING.md).

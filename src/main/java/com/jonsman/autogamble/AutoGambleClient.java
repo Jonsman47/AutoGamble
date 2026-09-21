@@ -3,7 +3,7 @@ package com.jonsman.autogamble;
 import com.jonsman.autogamble.config.*;
 import com.jonsman.autogamble.manager.*;
 import com.jonsman.autogamble.payment.*;
-import com.jonsman.autogamble.targeting.LeaderboardService;
+import com.jonsman.autogamble.baltop.*;
 import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
@@ -50,7 +50,9 @@ public final class AutoGambleClient implements ClientModInitializer {
     private Object lastConnection, lastWorld;
     private long configRevision = -1;
     private MinecraftPaymentDispatcher dispatcher;
-    private LeaderboardService leaderboards;
+    private BaltopDatabase baltopData;
+    private BaltopCrawler baltopCrawler;
+    private MinecraftBaltopEnvironment baltopEnvironment;
     private boolean openSettingsRequested;
     private boolean diagnostics;
     private int debugRemaining;
@@ -64,7 +66,9 @@ public final class AutoGambleClient implements ClientModInitializer {
         var dataRoot = FabricLoader.getInstance().getConfigDir().resolve("autogamble");
         history = new com.jonsman.autogamble.history.PaymentHistory(dataRoot, activeConfig);
         analytics = new com.jonsman.autogamble.history.AnalyticsEngine(dataRoot.resolve("data/analytics.json"), LOGGER);
-        leaderboards = new LeaderboardService(dataRoot.resolve("data/leaderboards.json"), LOGGER);
+        baltopData = new BaltopDatabase(dataRoot.resolve("data/baltop-cache.json"), LOGGER);
+        baltopCrawler = new BaltopCrawler(baltopData, LOGGER);
+        baltopEnvironment = new MinecraftBaltopEnvironment(Minecraft.getInstance(), LOGGER);
         tipping = new TippingManager((username, amount, source) -> {
             history.record(com.jonsman.autogamble.history.PaymentHistory.Direction.PAID, username, amount, source.name());
             analytics.outgoing(username, amount, source, System.currentTimeMillis());
@@ -88,7 +92,7 @@ public final class AutoGambleClient implements ClientModInitializer {
         gamble.acceptedObserver((payment, first, won, payout, now, config) ->
                 analytics.acceptedGamble(payment.sender(), payment.amount(), first, won, payout, System.currentTimeMillis(), config));
         refreshConfig();
-        dispatcher = new MinecraftPaymentDispatcher(Minecraft.getInstance(), selection, outgoing, () -> activeConfig, leaderboards);
+        dispatcher = new MinecraftPaymentDispatcher(Minecraft.getInstance(), selection, outgoing, () -> activeConfig, baltopData);
         dispatcher.history(history, knownBalance);
         dispatcher.analytics(analytics);
         dispatcher.tipping(tipping);
@@ -98,7 +102,7 @@ public final class AutoGambleClient implements ClientModInitializer {
         ClientTickEvents.END_CLIENT_TICK.register(this::tick);
         ClientPlayConnectionEvents.JOIN.register((handler, sender, client) -> resetSession());
         ClientPlayConnectionEvents.DISCONNECT.register((handler, client) -> resetSession());
-        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> { resetSession(); leaderboards.close(); analytics.close(); history.close(); balanceRules.close(); });
+        ClientLifecycleEvents.CLIENT_STOPPING.register(client -> { resetSession(); baltopData.close(); analytics.close(); history.close(); balanceRules.close(); });
         ClientSendMessageEvents.ALLOW_COMMAND.register(command -> {
             var client = Minecraft.getInstance();
             if (help.intercept(command, text -> { if (client.player != null) client.player.sendSystemMessage(Component.literal(text)); })) return false;
@@ -111,8 +115,8 @@ public final class AutoGambleClient implements ClientModInitializer {
                 signed == null && sender == null ? ReceivedMessage.Channel.SERVER_CHAT : ReceivedMessage.Channel.PLAYER_CHAT));
         ClientCommandRegistrationCallback.EVENT.register((commands, registryAccess) -> commands.register(
                 literal("autogamble").then(literal("settings").executes(context -> { openSettingsRequested = true; return 1; }))
-                .then(literal("debug").then(literal("on").executes(context -> { diagnostics = true; debugRemaining = 100; context.getSource().sendFeedback(Component.literal("[AutoGamble] Receive diagnostics ON (next 100 messages; logs/latest.log)")); return 1; }))
-                        .then(literal("off").executes(context -> { diagnostics = false; return 1; })))
+                .then(literal("debug").then(literal("on").executes(context -> { diagnostics = true; baltopEnvironment.debug(true); debugRemaining = 100; context.getSource().sendFeedback(Component.literal("[AutoGamble] Diagnostics ON (baltop item details in logs/latest.log)")); return 1; }))
+                        .then(literal("off").executes(context -> { diagnostics = false; baltopEnvironment.debug(false); return 1; })))
                 .then(literal("reports")
                     .then(literal("refresh").executes(context -> { history.refresh(); context.getSource().sendFeedback(Component.literal("[AutoGamble] Enabled report refresh scheduled.")); return 1; }))
                     .then(literal("status").executes(context -> { context.getSource().sendFeedback(Component.literal(reportStatus())); return 1; })))
@@ -133,6 +137,12 @@ public final class AutoGambleClient implements ClientModInitializer {
                             + ", Donut parser=" + c.donutSmpIncomingEnabled));
                     context.getSource().sendFeedback(Component.literal("[AutoGamble] Last parsed: " + gamble.lastIncoming()));
                     context.getSource().sendFeedback(Component.literal("[AutoGamble] " + dispatcher.discoveryStatus()));
+                    var scan=baltopCrawler.status(System.nanoTime()); var cache=baltopData.snapshot();
+                    context.getSource().sendFeedback(Component.literal("[AutoGamble] Baltop: " + scan.state() + ", page=" + scan.currentPage()
+                            + ", highest=" + cache.highestPage() + ", players=" + cache.entries().size() + ", last parsed=" + scan.lastParsed()
+                            + ", next slot=" + scan.nextSlot() + ", parse failures=" + scan.parseFailures()
+                            + ", duplicate entries=" + cache.duplicates() + ", duplicate pages=" + scan.duplicatePages()
+                            + ", message=" + scan.message()));
                     context.getSource().sendFeedback(Component.literal(String.format(java.util.Locale.ROOT,
                             "[AutoGamble] Base Win Chance: %.1f%%, First-Time Bonus: %s, First-Time Win Bonus: +%.1f%%, Known Payers: %d",
                             c.winChance * 100, c.firstTimePayerBonusEnabled ? "ON" : "OFF", c.firstTimeWinBonus * 100, payerHistory.size())));
@@ -146,7 +156,7 @@ public final class AutoGambleClient implements ClientModInitializer {
                             + ", Lifetime Customers: " + stats.customers().size()));
                     return 1;
                 }))));
-        LOGGER.info("[AutoGamble] 1.2.5 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
+        LOGGER.info("[AutoGamble] 1.3.0 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
     }
     private void receive(Component message, ReceivedMessage.Channel channel) {
         var client = Minecraft.getInstance();
@@ -207,7 +217,7 @@ public final class AutoGambleClient implements ClientModInitializer {
         if (!connected) { resetSession(); return; }
         var config = activeConfig;
         long now = System.nanoTime();
-        leaderboards.tick(System.currentTimeMillis());
+        baltopCrawler.tick(now,baltopEnvironment,config.baltopScanSpeed);
         tipping.tick(System.currentTimeMillis());
         gamble.tick(now, config);
         if (!config.tippingDisclosureAcknowledged) {
@@ -217,6 +227,7 @@ public final class AutoGambleClient implements ClientModInitializer {
         }
         dispatcher.beginTick();
         payouts.tick(now, config, dispatcher);
+        if (baltopCrawler.running()) { dispatcher.cancelDiscovery(); autoPay.reset(); }
         if (!config.enabled) {
             dispatcher.cancelDiscovery();
             autoPay.reset();
@@ -227,7 +238,7 @@ public final class AutoGambleClient implements ClientModInitializer {
         follow.tick(config, now, dispatcher::sendFollow);
         balanceRules.tick(config, knownBalance, now, System.currentTimeMillis(),
                 (player, amount) -> dispatcher.sendPayment(player, amount, OutgoingPaymentTracker.Source.BALANCE_RULE));
-        autoPay.tick(now, config, dispatcher, selection);
+        if (!baltopCrawler.running()) autoPay.tick(now, config, dispatcher, selection);
     }
     private void cancelWork() { if (dispatcher != null) dispatcher.cancelDiscovery(); autoPay.reset(); payouts.cancel(); selection.reset(); }
     private void openSettings(Minecraft client) {
@@ -241,7 +252,11 @@ public final class AutoGambleClient implements ClientModInitializer {
                 () -> client.player == null ? "" : client.player.getGameProfile().name(), payerHistory::reset, follow::clearHistory,
                 this::automationStatus, () -> analytics.snapshot(System.currentTimeMillis()), history::snapshot, history::refresh,
                 tipping::snapshot, () -> tipping.requestPermanentDisable(activeConfig, payments, System.nanoTime()),
-                leaderboards::status, leaderboards::refresh, analytics::targetingSnapshot);
+                baltopData::snapshot, () -> baltopCrawler.status(System.nanoTime()),
+                () -> { if (client.getConnection()!=null) { client.gui.setScreen(null); baltopCrawler.start(System.nanoTime()); } },
+                () -> baltopCrawler.pause("Paused by user"),
+                () -> { boolean ok=baltopCrawler.resetAndRestart(System.nanoTime()); if(ok) client.gui.setScreen(null); return ok; },
+                analytics::targetingSnapshot);
     }
     private String automationStatus() {
         var c = activeConfig; var data = history.snapshot();
@@ -261,7 +276,7 @@ public final class AutoGambleClient implements ClientModInitializer {
             + (data.error().isEmpty() ? "" : "\nData warning: " + data.error());
     }
     private void resetSession() {
-        knownBalance.invalidate(); soundAlerts.resetSession();
+        knownBalance.invalidate(); soundAlerts.resetSession(); if(baltopCrawler!=null) baltopCrawler.stopSession();
         if (tipping != null) tipping.resetSession();
         if (analytics != null) analytics.resetSession(System.currentTimeMillis());
         if (follow != null) follow.resetSession(); if (dispatcher != null) dispatcher.resetSession();

@@ -2,7 +2,7 @@ package com.jonsman.autogamble.config;
 
 /** Mutable editing model; publish changes through ConfigManager.update on the client thread. */
 public final class AutoGambleConfig {
-    public int configVersion = 8;
+    public int configVersion = 9;
     public boolean tippingDisclosureAcknowledged = false;
     public boolean tippingPermanentlyDisabled = false;
     public boolean paymentSoundAlertsEnabled = true;
@@ -41,14 +41,15 @@ public final class AutoGambleConfig {
     public boolean preferUnpaidPlayers = true;
     public boolean excludeNumericOnlyNames = true;
     public int minimumPrefixLength = 1, maximumPrefixLength = 3;
-    public int smartRandomWeight = 50, moneyLeaderboardWeight = 30, economyActiveWeight = 15, experimentalWeight = 5;
+    public int smartRandomWeight = 50, moneyLeaderboardWeight = 50, economyActiveWeight = 0, experimentalWeight = 0;
     public java.math.BigDecimal leaderboardMinimumBalance = new java.math.BigDecimal("500000000");
     public java.math.BigDecimal leaderboardMaximumBalance = null;
+    public int baltopScanSpeed = 1; // 0 Safe, 1 Normal, 2 Fast
     public double minimumBet = 1, maximumBet = 1_000_000;
     public long winnerDelayMinimumMs = 200, winnerDelayMaximumMs = 700;
 
     public void validate() {
-        configVersion = 8;
+        configVersion = 9;
         minimumAlertSpacingMs = Math.clamp(minimumAlertSpacingMs, 0, 5000);
         autoPayConversionWindowSeconds = Math.clamp(autoPayConversionWindowSeconds, 0, 86400);
         autoPayAttributionDurationSeconds = Math.clamp(autoPayAttributionDurationSeconds, 0, 86400);
@@ -85,8 +86,12 @@ public final class AutoGambleConfig {
         economyActiveWeight = Math.clamp(economyActiveWeight, 0, 100);
         experimentalWeight = Math.clamp(experimentalWeight, 0, 100);
         if (smartRandomWeight + moneyLeaderboardWeight + economyActiveWeight + experimentalWeight != 100) {
-            smartRandomWeight = 50; moneyLeaderboardWeight = 30; economyActiveWeight = 15; experimentalWeight = 5;
+            smartRandomWeight = 50; moneyLeaderboardWeight = 50; economyActiveWeight = 0; experimentalWeight = 0;
         }
+        // The retired website methods have no active implementation. Move their legacy weight to Smart Random.
+        smartRandomWeight += economyActiveWeight + experimentalWeight;
+        economyActiveWeight = experimentalWeight = 0;
+        baltopScanSpeed = Math.clamp(baltopScanSpeed, 0, 2);
         if (!MoneyValues.valid(leaderboardMinimumBalance, false)) leaderboardMinimumBalance = new java.math.BigDecimal("500000000");
         if (leaderboardMaximumBalance != null && (!MoneyValues.valid(leaderboardMaximumBalance, false)
                 || leaderboardMaximumBalance.compareTo(leaderboardMinimumBalance) < 0)) leaderboardMaximumBalance = null;

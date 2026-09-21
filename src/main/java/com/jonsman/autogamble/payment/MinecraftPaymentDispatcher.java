@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import com.jonsman.autogamble.manager.PlayerSelectionManager;
 import com.jonsman.autogamble.manager.PlayerSelectionManager.Candidate;
 import com.jonsman.autogamble.targeting.*;
+import com.jonsman.autogamble.baltop.BaltopDatabase;
 import net.minecraft.client.Minecraft;
 import java.util.*;
 
@@ -33,7 +34,7 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
     private PrefixPlayerDiscovery discovery = new PrefixPlayerDiscovery(prefixRandom, 1, 3);
     private int prefixMin = 1, prefixMax = 3;
     private final FailedTargetBlacklist failed = new FailedTargetBlacklist();
-    private final LeaderboardService leaderboards;
+    private final BaltopDatabase baltop;
     private final java.util.Random targetingRandom = new java.util.Random();
     private TargetMethod activeMethod;
     private List<String> externalCandidates = List.of();
@@ -41,7 +42,7 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
     private long verificationGeneration, verificationRequestedAt, nextVerificationAt;
     private boolean verificationPending;
     private Candidate verifiedTarget;
-    private boolean smartCandidatesCounted;
+    private long verifiedAt;
     private boolean targetingCycleComplete;
     private final EnumSet<TargetMethod> exhaustedMethods = EnumSet.noneOf(TargetMethod.class);
     private static final long VERIFICATION_TIMEOUT = 3_000_000_000L, VERIFICATION_INTERVAL = 250_000_000L;
@@ -53,9 +54,9 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
     }
     public MinecraftPaymentDispatcher(Minecraft client, PlayerSelectionManager selection, OutgoingPaymentTracker outgoing,
                                      java.util.function.Supplier<com.jonsman.autogamble.config.AutoGambleConfig> config,
-                                     LeaderboardService leaderboards) {
+                                     BaltopDatabase baltop) {
         this.client = client; this.selection = selection; this.outgoing = outgoing; this.config = config;
-        this.leaderboards = leaderboards;
+        this.baltop = baltop;
     }
     public void beginTick() { gate.beginTick(); }
     @Override public boolean connected() {
@@ -88,7 +89,7 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
             discovery = new PrefixPlayerDiscovery(prefixRandom, prefixMin, prefixMax);
         }
         if (activeMethod == null && !chooseMethod(c, now)) return targetingCycleComplete;
-        if (activeMethod != TargetMethod.SMART_RANDOM) return prepareExternal(now, c);
+        if (activeMethod != TargetMethod.SMART_RANDOM || !externalCandidates.isEmpty()) return prepareExternal(now, c);
         var activeDiscovery = discovery;
         discovery.poll(now, selection, c.preferUnpaidPlayers).ifPresent(request -> {
             var connection = client.getConnection();
@@ -108,22 +109,20 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
                 discovery.complete(request.token(), List.of(), local, c.excludeNumericOnlyNames, failed, selection, c.preferUnpaidPlayers, now);
             }
         });
-        if (discovery.ready() && !smartCandidatesCounted) {
-            smartCandidatesCounted = true;
-            if (analytics != null) for (int i = 0; i < discovery.candidates().size(); i++) analytics.targetingValidCandidate(activeMethod);
-        }
         if (discovery.ready() && discovery.candidates().isEmpty()) {
             exhaustedMethods.add(TargetMethod.SMART_RANDOM); discovery.cancel(); activeMethod = null;
             return !chooseMethod(c, now) && targetingCycleComplete;
         }
-        return discovery.ready();
+        if (discovery.ready()) {
+            externalCandidates = discovery.candidates().stream().map(Candidate::username).distinct().collect(java.util.stream.Collectors.toCollection(ArrayList::new));
+            Collections.shuffle(externalCandidates,targetingRandom);
+            return prepareExternal(now,c);
+        }
+        return false;
     }
     @Override public List<Candidate> eligiblePlayers() {
         if (!connected()) return List.of();
-        if (activeMethod != TargetMethod.SMART_RANDOM)
-            return verifiedTarget == null ? List.of() : List.of(verifiedTarget);
-        return discovery.candidates().stream().filter(p -> PrefixPlayerDiscovery.validName(p.username(), client.player.getGameProfile().name(), config.get().excludeNumericOnlyNames)
-                && !failed.contains(p.username(), System.nanoTime())).toList();
+        return verifiedTarget == null || System.nanoTime()-verifiedAt > 2_000_000_000L ? List.of() : List.of(verifiedTarget);
     }
     @Override public boolean dispatch(Candidate target, String amount) {
         if (!connected() || inputBlocked() || !client.isSameThread() || !eligiblePlayers().contains(target)) return false;
@@ -138,14 +137,10 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
 
     private boolean chooseMethod(AutoGambleConfig c, long now) {
         String local = client.player.getGameProfile().name();
-        LeaderboardSnapshot data = leaderboards == null ? LeaderboardSnapshot.empty() : leaderboards.snapshot();
-        List<String> money = TargetingCandidates.money(data, c, local, selection, now);
-        List<String> economy = TargetingCandidates.economy(data, local, selection, now);
+        List<String> money = baltop == null ? List.of() : TargetingCandidates.money(baltop.snapshot(), c, local, selection, now);
         EnumSet<TargetMethod> available = EnumSet.noneOf(TargetMethod.class);
         if (c.smartRandomWeight > 0) available.add(TargetMethod.SMART_RANDOM);
         if (c.moneyLeaderboardWeight > 0 && !money.isEmpty()) available.add(TargetMethod.MONEY_LEADERBOARD);
-        if (c.economyActiveWeight > 0 && !economy.isEmpty()) available.add(TargetMethod.ECONOMY_ACTIVE);
-        if (c.experimentalWeight > 0 && (!money.isEmpty() || !economy.isEmpty())) available.add(TargetMethod.EXPERIMENTAL);
         available.removeAll(exhaustedMethods);
         var selected = WeightedTargetSelector.select(c, available, targetingRandom);
         if (selected.isEmpty()) { targetingCycleComplete = true; return false; }
@@ -153,11 +148,7 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
         if (analytics != null) analytics.targetingAttempt(activeMethod);
         externalCandidates = switch (activeMethod) {
             case MONEY_LEADERBOARD -> new ArrayList<>(money);
-            case ECONOMY_ACTIVE -> new ArrayList<>(economy);
-            case EXPERIMENTAL -> {
-                LinkedHashSet<String> combined = new LinkedHashSet<>(); combined.addAll(economy); combined.addAll(money);
-                yield new ArrayList<>(combined);
-            }
+            case ECONOMY_ACTIVE, EXPERIMENTAL -> List.of();
             case SMART_RANDOM -> List.of();
         };
         if (!externalCandidates.isEmpty()) Collections.shuffle(externalCandidates, targetingRandom);
@@ -194,7 +185,8 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
                         result.getList().stream().map(s -> s.getText()).toList(), name, client.player.getGameProfile().name());
                 if (exact && PrefixPlayerDiscovery.validName(name, client.player.getGameProfile().name(), c.excludeNumericOnlyNames)
                         && !failed.contains(name, System.nanoTime()) && !selection.recentlyPaid(name, System.nanoTime())) {
-                    verifiedTarget = new Candidate(null, name); if (analytics != null) analytics.targetingValidCandidate(activeMethod);
+                    verifiedTarget = new Candidate(null, name); verifiedAt=System.nanoTime();
+                    if (analytics != null) analytics.targetingValidCandidate(activeMethod);
                 } else if (analytics != null) analytics.targetingOfflineRejected(activeMethod);
             }));
         } catch (RuntimeException ex) {
@@ -203,8 +195,8 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
         }
     }
     private void resetTargetingCycle() {
-        verificationGeneration++; verificationPending = false; verifiedTarget = null; activeMethod = null;
-        externalCandidates = List.of(); externalIndex = 0; nextVerificationAt = 0; smartCandidatesCounted = false;
+        verificationGeneration++; verificationPending = false; verifiedTarget = null; verifiedAt=0; activeMethod = null;
+        externalCandidates = List.of(); externalIndex = 0; nextVerificationAt = 0;
         targetingCycleComplete = false; exhaustedMethods.clear();
     }
    public boolean sendWarning(String username, String message) {
