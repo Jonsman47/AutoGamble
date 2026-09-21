@@ -81,10 +81,10 @@ public final class ConfigManager {
                         throw new JsonParseException("Wrong type: " + entry.getKey());
                 }
                 int version = object.has("configVersion") ? object.get("configVersion").getAsBigDecimal().intValueExact() : 0;
-                for (String key : new String[]{"recentMaxLines", "storedTransactionHistoryLimit", "spamPaymentThreshold", "spamPaymentWindowSeconds", "spamWarningCooldownSeconds", "minimumPrefixLength", "maximumPrefixLength", "smartRandomWeight", "moneyLeaderboardWeight", "economyActiveWeight", "experimentalWeight", "baltopScanSpeed", "winnerDelayMinimumMs", "winnerDelayMaximumMs", "receiptDeduplicationWindowMs", "outgoingPaymentTrackingWindowMs", "minimumAlertSpacingMs", "autoPayConversionWindowSeconds", "autoPayAttributionDurationSeconds"}) {
+                for (String key : new String[]{"recentMaxLines", "storedTransactionHistoryLimit", "spamPaymentThreshold", "spamPaymentWindowSeconds", "spamWarningCooldownSeconds", "minimumPrefixLength", "maximumPrefixLength", "smartRandomWeight", "moneyLeaderboardWeight", "economyActiveWeight", "experimentalWeight", "baltopScanSpeed", "baltopMaxChecksPerCycle", "winnerDelayMinimumMs", "winnerDelayMaximumMs", "receiptDeduplicationWindowMs", "outgoingPaymentTrackingWindowMs", "minimumAlertSpacingMs", "autoPayConversionWindowSeconds", "autoPayAttributionDurationSeconds"}) {
                     if (object.has(key)) object.get(key).getAsBigDecimal().longValueExact();
                 }
-                if (version > 9) {
+                if (version > 10) {
                     futureVersion = true;
                     config.enabled = false;
                     log.warn("[AutoGamble] Newer config version {}; using disabled defaults without overwriting", version);
@@ -105,7 +105,7 @@ public final class ConfigManager {
     private void migrate(JsonObject object, int version) {
         if (version < 0) throw new JsonParseException("Negative configVersion");
         // Version 0 means an unversioned file. Missing fields retain constructor defaults.
-        if (version <= 8) object.addProperty("configVersion", 9);
+        if (version <= 9) object.addProperty("configVersion", 10);
     }
     public void update(Consumer<AutoGambleConfig> editor) {
         if (futureVersion) {

@@ -51,7 +51,7 @@ public final class AutoPayManager {
             var candidates = environment.eligiblePlayers();
             var target = selection.select(candidates, config.preferUnpaidPlayers, playerRandom, nowNanos);
             if (target.isEmpty()) {
-                if (!emptyReported) LOG.info("[AutoGamble] No valid Auto Pay player found after 10 random prefix attempts");
+                if (!emptyReported) LOG.info("[AutoGamble] No verified Auto Pay target found this cycle; retrying after the configured delay");
                 state = "NO_CANDIDATES"; emptyReported = true;
                 return;
             }

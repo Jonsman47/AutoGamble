@@ -66,7 +66,12 @@ public final class BaltopDatabase implements AutoCloseable {
             if (!Files.exists(path)) return;
             Data data = GSON.fromJson(Files.readString(path), Data.class);
             if (data == null || data.version != VERSION || data.entries == null || data.highestPage < 0) throw new IOException("Bad baltop cache");
-            for (BaltopEntry row : data.entries) if (row != null && row.page() <= data.highestPage) entries.put(row.key(), row);
+            for (BaltopEntry row : data.entries) if (row != null && row.page() <= data.highestPage) {
+                // Older parser versions could misread a username such as Rank1orFeed as rank #1.
+                BaltopEntry safe = row.rank() != null && row.rank() < row.page()
+                        ? new BaltopEntry(row.username(),row.balance(),null,row.page(),row.lastSeenInBaltop()) : row;
+                entries.put(safe.key(),safe);
+            }
             highestPage = data.highestPage; scanStarted = data.scanStarted; lastScan = data.lastScan;
             duplicates = data.duplicates; complete = data.complete;
         } catch (Exception ex) {

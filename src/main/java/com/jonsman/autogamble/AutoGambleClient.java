@@ -156,7 +156,7 @@ public final class AutoGambleClient implements ClientModInitializer {
                             + ", Lifetime Customers: " + stats.customers().size()));
                     return 1;
                 }))));
-        LOGGER.info("[AutoGamble] 1.3.0 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
+        LOGGER.info("[AutoGamble] 1.3.1 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
     }
     private void receive(Component message, ReceivedMessage.Channel channel) {
         var client = Minecraft.getInstance();
@@ -256,7 +256,7 @@ public final class AutoGambleClient implements ClientModInitializer {
                 () -> { if (client.getConnection()!=null) { client.gui.setScreen(null); baltopCrawler.start(System.nanoTime()); } },
                 () -> baltopCrawler.pause("Paused by user"),
                 () -> { boolean ok=baltopCrawler.resetAndRestart(System.nanoTime()); if(ok) client.gui.setScreen(null); return ok; },
-                analytics::targetingSnapshot);
+                analytics::targetingSnapshot, dispatcher::diagnostics);
     }
     private String automationStatus() {
         var c = activeConfig; var data = history.snapshot();

@@ -5,6 +5,7 @@ import com.jonsman.autogamble.history.AnalyticsEngine;
 import com.jonsman.autogamble.history.PaymentHistory;
 import com.jonsman.autogamble.payment.TippingManager;
 import com.jonsman.autogamble.baltop.*;
+import com.jonsman.autogamble.targeting.TargetingDiagnostics;
 import java.util.List;
 import java.util.function.*;
 
@@ -15,7 +16,11 @@ public record SettingsContext(ConfigManager configs, Runnable changed, Runnable 
         Supplier<TippingManager.Snapshot> tipping, Supplier<TippingManager.QueueResult> disableTipping,
         Supplier<BaltopDatabase.Snapshot> baltopData, Supplier<BaltopCrawler.Status> baltopStatus,
         Runnable startBaltop, Runnable pauseBaltop, BooleanSupplier resetBaltop,
-        Supplier<List<AnalyticsEngine.MethodStats>> targetingAnalytics) {
+        Supplier<List<AnalyticsEngine.MethodStats>> targetingAnalytics,
+        Supplier<TargetingDiagnostics> targetingDiagnostics) {
+    private static TargetingDiagnostics emptyDiagnostics() {
+        return new TargetingDiagnostics("Waiting",0,0,0,0,0,0,0,0,0,0,0,0,0,"","","","","",-1,"");
+    }
     public SettingsContext(ConfigManager configs, Runnable changed, Runnable resetPaid, Supplier<String> status,
             Supplier<String> localUsername, BooleanSupplier resetPayers, Runnable clearFollowed,
             Supplier<String> automationStatus, Supplier<AnalyticsEngine.Snapshot> analytics,
@@ -25,7 +30,7 @@ public record SettingsContext(ConfigManager configs, Runnable changed, Runnable 
                 analytics, reports, refreshReports, tipping, disableTipping,
                 () -> new BaltopDatabase.Snapshot(List.of(),0,0,0,false,0,""),
                 () -> new BaltopCrawler.Status(BaltopCrawler.State.IDLE,0,0,false,-1,0,0,0,"",""),
-                () -> {}, () -> {}, () -> false, List::of);
+                () -> {}, () -> {}, () -> false, List::of, SettingsContext::emptyDiagnostics);
     }
     public SettingsContext(ConfigManager configs, Runnable changed, Runnable resetPaid, Supplier<String> status, Supplier<String> localUsername) {
         this(configs, changed, resetPaid, status, localUsername, () -> false);
@@ -36,6 +41,6 @@ public record SettingsContext(ConfigManager configs, Runnable changed, Runnable 
                 () -> new TippingManager.Snapshot(0, false, ""), () -> TippingManager.QueueResult.FULL,
                 () -> new BaltopDatabase.Snapshot(List.of(),0,0,0,false,0,""),
                 () -> new BaltopCrawler.Status(BaltopCrawler.State.IDLE,0,0,false,-1,0,0,0,"",""),
-                () -> {}, () -> {}, () -> false, List::of);
+                () -> {}, () -> {}, () -> false, List::of, SettingsContext::emptyDiagnostics);
     }
 }

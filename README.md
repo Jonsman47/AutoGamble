@@ -51,6 +51,6 @@ Payer history: `config/autogamble-payers.json`
 
 With Java 25, run `gradlew.bat test` then `gradlew.bat build` (Linux/macOS: `sh gradlew`).
 
-Version **1.3.0** replaces the 1.2.5 website experiment with an in-game Baltop scanner and local database. Earlier release JARs and historical source remain preserved. New builds go to `build/libs/`. See [v1.3.0 notes](docs/PATCH-1.3.0.md).
+Version **1.3.1** fixes live-tested Baltop ordering and advertising verification. Earlier release JARs and historical source remain preserved. New builds go to `build/libs/`. See [v1.3.1 notes](docs/PATCH-1.3.1.md).
 
 Before publishing each new version, archive the outgoing release's exact published JAR and matching sources JAR under `releases/archive/<version>/`. See the [release checklist](docs/RELEASING.md).

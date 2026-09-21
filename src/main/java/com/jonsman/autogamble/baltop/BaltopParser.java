@@ -10,7 +10,7 @@ public final class BaltopParser {
     private static final Pattern TITLE = Pattern.compile("(?i)^\\s*Most Money\\s*\\(\\s*Page\\s+(\\d+)\\s*\\)\\s*$");
     private static final Pattern NAME = Pattern.compile("[A-Za-z0-9_]{2,16}");
     private static final Pattern LABELED_NAME = Pattern.compile("(?i)(?:player|username)\\s*[:：]\\s*([A-Za-z0-9_]{2,16})");
-    private static final Pattern RANK = Pattern.compile("(?i)(?:rank\\s*[:：]?\\s*#?\\s*|^\\s*#\\s*)([0-9][0-9,]*)");
+    private static final Pattern RANK = Pattern.compile("(?i)(?:\\brank\\s*(?:[:：]\\s*)?#?\\s*|^\\s*#\\s*)([0-9][0-9,]*)(?![A-Za-z0-9_])");
     private static final Pattern MONEY = Pattern.compile("(?i)(?:balance|money|bal)\\s*[:：]?\\s*\\$?\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?\\s*[KMBT]?)|\\$\\s*([0-9][0-9,]*(?:\\.[0-9]{1,2})?\\s*[KMBT]?)");
     private BaltopParser() {}
     public record Item(int slot, String itemId, String name, List<String> lore, String components) {
@@ -42,6 +42,14 @@ public final class BaltopParser {
             if (username == null && balance == null) continue; // decoration/navigation
             if (username == null || balance == null) { failures++; continue; }
             Integer rank = rank(display, lore);
+            // A six-row inventory with navigation in the bottom row exposes five player rows.
+            // Derive capacity from the observed GUI geometry, never from the number of parsed names.
+            int playerSlots = page.inventorySlots() >= 18 && page.inventorySlots() % 9 == 0 ? page.inventorySlots() - 9 : -1;
+            if (rank == null && playerSlots > 0 && item.slot() < playerSlots
+                    && (next < 0 || next >= playerSlots)) {
+                long inferred = (long) (page.number() - 1) * playerSlots + item.slot() + 1;
+                if (inferred <= Integer.MAX_VALUE) rank = (int) inferred;
+            }
             try { BaltopEntry row = new BaltopEntry(username,balance,rank,page.number(),now); found.put(row.key(),row); }
             catch (IllegalArgumentException ex) { failures++; }
         }

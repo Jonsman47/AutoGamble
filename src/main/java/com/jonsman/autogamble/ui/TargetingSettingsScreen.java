@@ -12,7 +12,7 @@ import java.util.*;
 
 /** Compact editor for weighted in-game targeting and scanned-baltop filters. */
 public final class TargetingSettingsScreen extends Screen {
-    private static final String[] PAGES = {"Weights", "Money", "Analytics"};
+    private static final String[] PAGES = {"Weights", "Money", "Checks", "Analytics"};
     private final Screen parent; private final SettingsContext context; private final SettingsDraft draft;
     private final Map<Field, EditBox> fields = new EnumMap<>(Field.class);
     private int page, panel, left, row; private String error = ""; private Button save;
@@ -36,13 +36,16 @@ public final class TargetingSettingsScreen extends Screen {
             case 1 -> {
                 money(Field.LEADERBOARD_MIN, "Inclusive minimum. Supports K, M, B and T, for example 1.5B.");
                 money(Field.LEADERBOARD_MAX, "Inclusive maximum. Leave blank for no maximum.");
-                number(Field.BALTOP_SPEED,"0 Safe, 1 Normal, 2 Fast. Fast is still rate-limited.");
                 int fifth = panel / 5;
                 String[] labels = {"100M+", "500M+", "1B+", "10B+", "100B+"};
                 String[] values = {"100M", "500M", "1B", "10B", "100B"};
                 for (int i = 0; i < labels.length; i++) { int index = i; button(labels[i], left + i*fifth, row + 4, fifth-2, () -> preset(values[index])); }
             }
-            case 2 -> { }
+            case 2 -> {
+                number(Field.BALTOP_SPEED,"0 Safe, 1 Normal, 2 Fast. Fast is still rate-limited.");
+                number(Field.BALTOP_MAX_CHECKS,"Maximum different players checked per advertising cycle (1-100).");
+            }
+            case 3 -> { }
             default -> throw new IllegalStateException();
         }
         save = button("Save & Done", left, height - 28, panel / 2 - 3, this::save);
@@ -95,7 +98,7 @@ public final class TargetingSettingsScreen extends Screen {
             String min=normalized(Field.LEADERBOARD_MIN), max=draft.text(Field.LEADERBOARD_MAX).isBlank()?"No maximum":normalized(Field.LEADERBOARD_MAX);
             g.centeredText(font,"Normalized range: "+min+" – "+max,width/2,187,0xFFAAAAAA);
         }
-        if(page==2) renderAnalytics(g);
+        if(page==3) renderAnalytics(g);
         if(!error.isEmpty())g.centeredText(font,font.plainSubstrByWidth(error,panel),width/2,height-43,0xFFFF8888);
     }
     private String normalized(Field field){try{return MoneyValues.display(MoneyValues.parse(draft.text(field)));}catch(RuntimeException ex){return "Invalid";}}

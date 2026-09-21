@@ -37,10 +37,15 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
     private final BaltopDatabase baltop;
     private final java.util.Random targetingRandom = new java.util.Random();
     private TargetMethod activeMethod;
+    private TargetMethod lastMethod;
     private List<String> externalCandidates = List.of();
-    private int externalIndex;
+    private CandidateRetryQueue retryQueue = new CandidateRetryQueue(List.of());
     private long verificationGeneration, verificationRequestedAt, nextVerificationAt;
     private boolean verificationPending;
+    private String verificationName = "", lastSuggestionPrefix = "", lastRejectedUsername = "", lastRejectionReason = "", lastSuccessfulTarget = "", lastResult = "WAITING";
+    private List<String> verificationPrefixes = List.of();
+    private int verificationStep, candidateChecks, suggestionRequests, onlineMatches, verificationFailures, paymentsAttempted, paymentsSent;
+    private long lastPaymentMillis;
     private Candidate verifiedTarget;
     private long verifiedAt;
     private boolean targetingCycleComplete;
@@ -75,6 +80,18 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
             + ", Last Selected Player: " + discovery.selected() + ", Numeric-Only Filter: "
             + (config.get().excludeNumericOnlyNames ? "ON" : "OFF") + ", Failed Target Blacklist: " + failed.size(System.nanoTime());
     }
+    public TargetingDiagnostics diagnostics() {
+        var snapshot = baltop == null ? null : baltop.snapshot();
+        var configNow = config.get();
+        String local = connected() ? client.player.getGameProfile().name() : ""; long now = System.nanoTime();
+        var pool=snapshot==null ? new TargetingCandidates.Pool(0,0,0,0,0,0,List.of())
+                : TargetingCandidates.summary(snapshot,configNow,local,selection,failed,now);
+        TargetMethod shown=activeMethod==null?lastMethod:activeMethod;
+        return new TargetingDiagnostics(shown==null ? "Waiting" : shown.label(),pool.total(),pool.balanceEligible(),
+                pool.localExcluded(),pool.recentExcluded(),pool.invalidExcluded(),pool.blockedExcluded(),pool.candidates().size(),candidateChecks,suggestionRequests,onlineMatches,verificationFailures,
+                paymentsAttempted,paymentsSent,verificationName,lastSuggestionPrefix,lastRejectedUsername,lastRejectionReason,
+                lastSuccessfulTarget,lastPaymentMillis == 0 ? -1 : System.currentTimeMillis()-lastPaymentMillis,lastResult);
+    }
     public void manualCommand() { if (!sendingPayment) failed.unrelatedCommand(); }
     public void receiveFailure(ReceivedMessage message) {
         failed.receive(message, System.nanoTime()).ifPresent(name ->
@@ -95,14 +112,12 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
             var connection = client.getConnection();
             String local = client.player.getGameProfile().name();
             try {
-                var context = connection.getCommands().parse(request.command().substring(1), connection.getSuggestionsProvider())
-                        .getContext().build(request.command());
-                connection.getSuggestionsProvider().customSuggestion(context).whenComplete((result, error) ->
+                PaySuggestionService.request(connection,request.prefix()).whenComplete((result, error) ->
                     client.execute(() -> {
                         if (client.getConnection() != connection || discovery != activeDiscovery) return;
                         var current = config.get();
                         if (!current.enabled || !current.autoPayEnabled) { discovery.cancel(); return; }
-                        discovery.complete(request.token(), error == null ? result.getList().stream().map(s -> s.getText()).toList() : List.of(),
+                        discovery.complete(request.token(), error == null ? result : List.of(),
                             local, current.excludeNumericOnlyNames, failed, selection, current.preferUnpaidPlayers, System.nanoTime());
                     }));
             } catch (RuntimeException ex) {
@@ -116,6 +131,7 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
         if (discovery.ready()) {
             externalCandidates = discovery.candidates().stream().map(Candidate::username).distinct().collect(java.util.stream.Collectors.toCollection(ArrayList::new));
             Collections.shuffle(externalCandidates,targetingRandom);
+            retryQueue=new CandidateRetryQueue(externalCandidates);
             return prepareExternal(now,c);
         }
         return false;
@@ -129,22 +145,40 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
         if (amount == null || !amount.matches("[0-9]+(?:\\.[0-9]{1,2})?")) return false;
         if (activeMethod == TargetMethod.SMART_RANDOM) discovery.selected(target.username());
         TargetMethod suppliedBy = activeMethod;
+        paymentsAttempted++;
         boolean sent = sendPayment(target.username(), new java.math.BigDecimal(amount), OutgoingPaymentTracker.Source.ADVERTISING) == Result.SENT;
+        if (sent) {
+            if (!config.get().dryRunMode) paymentsSent++;
+            lastSuccessfulTarget=target.username(); lastPaymentMillis=System.currentTimeMillis();
+            lastResult=config.get().dryRunMode?"DRY RUN":"PAYMENT SENT";
+        }
+        else reject(target.username(),"COMMAND_RATE_LIMIT");
         if (sent && analytics != null && !config.get().dryRunMode)
             analytics.targetingPayment(suppliedBy, target.username(), new java.math.BigDecimal(amount), System.currentTimeMillis());
         return sent;
     }
 
     private boolean chooseMethod(AutoGambleConfig c, long now) {
+        if (exhaustedMethods.isEmpty()) {
+            candidateChecks=suggestionRequests=onlineMatches=verificationFailures=paymentsAttempted=paymentsSent=0;
+            verificationName=""; lastRejectedUsername=""; lastRejectionReason=""; lastResult="SELECTING";
+        }
         String local = client.player.getGameProfile().name();
-        List<String> money = baltop == null ? List.of() : TargetingCandidates.money(baltop.snapshot(), c, local, selection, now);
+        List<String> money = baltop == null ? List.of() : TargetingCandidates.summary(baltop.snapshot(),c,local,selection,failed,now).candidates();
         EnumSet<TargetMethod> available = EnumSet.noneOf(TargetMethod.class);
         if (c.smartRandomWeight > 0) available.add(TargetMethod.SMART_RANDOM);
         if (c.moneyLeaderboardWeight > 0 && !money.isEmpty()) available.add(TargetMethod.MONEY_LEADERBOARD);
         available.removeAll(exhaustedMethods);
         var selected = WeightedTargetSelector.select(c, available, targetingRandom);
-        if (selected.isEmpty()) { targetingCycleComplete = true; return false; }
+        if (selected.isEmpty()) {
+            targetingCycleComplete = true; lastResult="NO_CANDIDATES";
+            if (baltop != null && !baltop.snapshot().entries().isEmpty() && BaltopDatabase.filter(baltop.snapshot().entries(),
+                    c.leaderboardMinimumBalance,c.leaderboardMaximumBalance,"").isEmpty()) reject("","OUTSIDE_BALANCE_RANGE");
+            else reject("","NO_CANDIDATES");
+            return false;
+        }
         activeMethod = selected.get();
+        lastMethod=activeMethod;
         if (analytics != null) analytics.targetingAttempt(activeMethod);
         externalCandidates = switch (activeMethod) {
             case MONEY_LEADERBOARD -> new ArrayList<>(money);
@@ -152,51 +186,92 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
             case SMART_RANDOM -> List.of();
         };
         if (!externalCandidates.isEmpty()) Collections.shuffle(externalCandidates, targetingRandom);
+        retryQueue=new CandidateRetryQueue(externalCandidates);
         return true;
     }
     private boolean prepareExternal(long now, AutoGambleConfig c) {
-        if (verifiedTarget != null) return true;
+        if (verifiedTarget != null) {
+            if (now-verifiedAt <= 2_000_000_000L) return true;
+            reject(verifiedTarget.username(),"VERIFICATION_EXPIRED"); verifiedTarget=null;
+        }
         if (verificationPending) {
             if (now - verificationRequestedAt < VERIFICATION_TIMEOUT) return false;
-            verificationPending = false; verificationGeneration++; nextVerificationAt = now + VERIFICATION_INTERVAL;
-            if (analytics != null) analytics.targetingOfflineRejected(activeMethod);
+            verificationPending = false; verificationGeneration++; verificationStep++;
+            nextVerificationAt = now + VERIFICATION_INTERVAL;
+            lastResult="AUTOCOMPLETE_TIMEOUT";
+            if (verificationStep >= verificationPrefixes.size()) finishFailedVerification("AUTOCOMPLETE_TIMEOUT");
         }
         if (now < nextVerificationAt) return false;
-        while (externalIndex < externalCandidates.size()) {
-            String name = externalCandidates.get(externalIndex++);
-            if (selection.recentlyPaid(name, now)) { if (analytics != null) analytics.targetingRepeatPrevented(activeMethod); continue; }
-            if (failed.contains(name, now) || name.equalsIgnoreCase(client.player.getGameProfile().name())) continue;
-            requestExactVerification(name, now, c); return false;
+        if (!verificationName.isEmpty()) { requestExactVerification(now); return false; }
+        int budget = activeMethod == TargetMethod.MONEY_LEADERBOARD ? c.baltopMaxChecksPerCycle : Math.min(c.baltopMaxChecksPerCycle,10);
+        if (candidateChecks >= budget) { finishCandidateBudget(); return true; }
+        Optional<String> next;
+        while ((next=retryQueue.next()).isPresent()) {
+            String name = next.get();
+            if (selection.recentlyPaid(name, now)) { if (analytics != null) analytics.targetingRepeatPrevented(activeMethod); reject(name,"RECENT_TARGET"); continue; }
+            if (failed.contains(name, now)) { reject(name,"BLOCKED_TARGET"); continue; }
+            if (name.equalsIgnoreCase(client.player.getGameProfile().name())) { reject(name,"LOCAL_PLAYER"); continue; }
+            verificationPrefixes=OnlineVerification.prefixes(name);
+            if (verificationPrefixes.isEmpty()) { reject(name,"INVALID_USERNAME"); continue; }
+            verificationName=name; verificationStep=0; candidateChecks++;
+            requestExactVerification(now); return false;
         }
         // The selected pool was entirely offline; reselect from the remaining enabled methods.
-        exhaustedMethods.add(activeMethod); activeMethod = null; externalCandidates = List.of(); externalIndex = 0;
+        exhaustedMethods.add(activeMethod); activeMethod = null; externalCandidates = List.of(); retryQueue=new CandidateRetryQueue(List.of());
         return !chooseMethod(c, now) && targetingCycleComplete;
     }
-    private void requestExactVerification(String name, long now, AutoGambleConfig c) {
+    private void finishCandidateBudget() {
+        lastResult="NO_ONLINE_MATCH_AFTER_"+candidateChecks+"_CANDIDATES";
+        LoggerFactory.getLogger("autogamble").info("[AutoGamble] {}: {} candidate checks, {} suggestion requests, {} matches; last rejection {} {}",
+                activeMethod,candidateChecks,suggestionRequests,onlineMatches,lastRejectedUsername,lastRejectionReason);
+        targetingCycleComplete=true;
+    }
+    private void reject(String name,String reason) { lastRejectedUsername=name; lastRejectionReason=reason; }
+    private void finishFailedVerification(String reason) {
+        boolean onlineFailure=reason.startsWith("AUTOCOMPLETE");
+        if(onlineFailure) verificationFailures++;
+        reject(verificationName,reason); lastResult=reason; verificationName=""; verificationPrefixes=List.of(); verificationStep=0;
+        if (analytics != null && activeMethod != null) {
+            if(onlineFailure) analytics.targetingOfflineRejected(activeMethod);
+            else if(reason.equals("RECENT_TARGET")) analytics.targetingRepeatPrevented(activeMethod);
+        }
+    }
+    private void requestExactVerification(long now) {
         var connection = client.getConnection(); long token = ++verificationGeneration;
         verificationPending = true; verificationRequestedAt = now;
-        String command = "/pay " + name;
+        suggestionRequests++;
+        String name=verificationName, prefix=verificationPrefixes.get(verificationStep);
+        lastSuggestionPrefix=prefix; lastResult="Checking /pay "+prefix;
         try {
-            var context = connection.getCommands().parse(command.substring(1), connection.getSuggestionsProvider()).getContext().build(command);
-            connection.getSuggestionsProvider().customSuggestion(context).whenComplete((result, error) -> client.execute(() -> {
+            PaySuggestionService.request(connection,prefix).whenComplete((result, error) -> client.execute(() -> {
                 if (token != verificationGeneration || client.getConnection() != connection) return;
                 verificationPending = false; nextVerificationAt = System.nanoTime() + VERIFICATION_INTERVAL;
-                boolean exact = error == null && OnlineVerification.exactUsername(
-                        result.getList().stream().map(s -> s.getText()).toList(), name, client.player.getGameProfile().name());
-                if (exact && PrefixPlayerDiscovery.validName(name, client.player.getGameProfile().name(), c.excludeNumericOnlyNames)
-                        && !failed.contains(name, System.nanoTime()) && !selection.recentlyPaid(name, System.nanoTime())) {
+                if (client.player == null) { finishFailedVerification("DISCONNECTED"); return; }
+                boolean exact = error == null && OnlineVerification.exactUsername(result,name,client.player.getGameProfile().name());
+                if (exact && selection.recentlyPaid(name,System.nanoTime())) { finishFailedVerification("RECENT_TARGET"); return; }
+                if (exact && failed.contains(name,System.nanoTime())) { finishFailedVerification("BLOCKED_TARGET"); return; }
+                if (exact && !PrefixPlayerDiscovery.validName(name,client.player.getGameProfile().name(),config.get().excludeNumericOnlyNames)) {
+                    finishFailedVerification("INVALID_USERNAME"); return;
+                }
+                if (exact) {
                     verifiedTarget = new Candidate(null, name); verifiedAt=System.nanoTime();
+                    verificationName=""; verificationPrefixes=List.of(); verificationStep=0;
+                    onlineMatches++; lastResult="ONLINE MATCH: "+name;
                     if (analytics != null) analytics.targetingValidCandidate(activeMethod);
-                } else if (analytics != null) analytics.targetingOfflineRejected(activeMethod);
+                } else {
+                    verificationStep++;
+                    if (verificationStep >= verificationPrefixes.size()) finishFailedVerification(error == null ? "AUTOCOMPLETE_NO_EXACT_MATCH" : "AUTOCOMPLETE_ERROR");
+                    else lastResult="Retrying shorter prefix for "+name;
+                }
             }));
         } catch (RuntimeException ex) {
-            verificationPending = false; nextVerificationAt = now + VERIFICATION_INTERVAL;
-            if (analytics != null) analytics.targetingOfflineRejected(activeMethod);
+            verificationPending = false; nextVerificationAt = now + VERIFICATION_INTERVAL; verificationStep++;
+            if (verificationStep >= verificationPrefixes.size()) finishFailedVerification("AUTOCOMPLETE_ERROR");
         }
     }
     private void resetTargetingCycle() {
         verificationGeneration++; verificationPending = false; verifiedTarget = null; verifiedAt=0; activeMethod = null;
-        externalCandidates = List.of(); externalIndex = 0; nextVerificationAt = 0;
+        externalCandidates = List.of(); retryQueue=new CandidateRetryQueue(List.of()); nextVerificationAt = 0; verificationName=""; verificationPrefixes=List.of(); verificationStep=0;
         targetingCycleComplete = false; exhaustedMethods.clear();
     }
    public boolean sendWarning(String username, String message) {
