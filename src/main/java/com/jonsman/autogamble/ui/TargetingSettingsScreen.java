@@ -3,6 +3,7 @@ package com.jonsman.autogamble.ui;
 import com.jonsman.autogamble.config.*;
 import com.jonsman.autogamble.config.SettingsDraft.Field;
 import com.jonsman.autogamble.history.AnalyticsEngine;
+import com.jonsman.autogamble.targeting.ExperimentalFeatures;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.*;
 import net.minecraft.client.gui.screens.*;
@@ -15,7 +16,7 @@ public final class TargetingSettingsScreen extends Screen {
     private static final String[] PAGES = {"Weights", "Money", "Checks", "Analytics"};
     private final Screen parent; private final SettingsContext context; private final SettingsDraft draft;
     private final Map<Field, EditBox> fields = new EnumMap<>(Field.class);
-    private int page, panel, left, row; private String error = ""; private Button save;
+    private int page, panel, left, row; private String error = "", notice = ""; private Button save;
     public TargetingSettingsScreen(Screen parent, SettingsContext context, SettingsDraft draft) {
         super(Component.literal("Advertising Targeting")); this.parent = parent; this.context = context; this.draft = draft;
     }
@@ -28,22 +29,21 @@ public final class TargetingSettingsScreen extends Screen {
         }
         switch (page) {
             case 0 -> {
-                number(Field.SMART_WEIGHT, "Percent of attempts using current /pay prefix suggestions.");
-                number(Field.MONEY_WEIGHT, "Percent using the locally scanned /baltop inventory.");
-                button("Reset Recommended 50 / 50", left, row + 4, panel, this::resetWeights);
-                button("Scanned Baltop…", left, row + 28, panel, () -> minecraft.gui.setScreen(new ScannedBaltopScreen(this,context)));
+                button("Smart Random: active 100% (legacy)", left, row, panel, this::comingSoon); row += 24;
+                button("Baltop payments: coming soon", left, row, panel, this::comingSoon); row += 24;
+                button("Edit targeting percentages: coming soon", left, row, panel, this::comingSoon); row += 24;
+                button("Scanned Baltop…", left, row, panel, () -> minecraft.gui.setScreen(new ScannedBaltopScreen(this,context)));
             }
             case 1 -> {
-                money(Field.LEADERBOARD_MIN, "Inclusive minimum. Supports K, M, B and T, for example 1.5B.");
-                money(Field.LEADERBOARD_MAX, "Inclusive maximum. Leave blank for no maximum.");
+                button("Baltop minimum: "+MoneyValues.display(draft.working.leaderboardMinimumBalance)+" (inactive)",left,row,panel,this::comingSoon);row+=24;
+                button("Baltop maximum: "+MoneyValues.display(draft.working.leaderboardMaximumBalance)+" (inactive)",left,row,panel,this::comingSoon);row+=24;
                 int fifth = panel / 5;
                 String[] labels = {"100M+", "500M+", "1B+", "10B+", "100B+"};
-                String[] values = {"100M", "500M", "1B", "10B", "100B"};
-                for (int i = 0; i < labels.length; i++) { int index = i; button(labels[i], left + i*fifth, row + 4, fifth-2, () -> preset(values[index])); }
+                for (int i = 0; i < labels.length; i++) button(labels[i], left + i*fifth, row + 4, fifth-2, this::comingSoon);
             }
             case 2 -> {
                 number(Field.BALTOP_SPEED,"0 Safe, 1 Normal, 2 Fast. Fast is still rate-limited.");
-                number(Field.BALTOP_MAX_CHECKS,"Maximum different players checked per advertising cycle (1-100).");
+                button("Baltop recipient checks: coming soon",left,row,panel,this::comingSoon);
             }
             case 3 -> { }
             default -> throw new IllegalStateException();
@@ -62,16 +62,8 @@ public final class TargetingSettingsScreen extends Screen {
         box.setMaxLength(32); box.setValue(draft.text(field)); box.setTooltip(Tooltip.create(Component.literal(tooltip)));
         box.setResponder(value -> { draft.text(field,value); validate(); }); fields.put(field,box); row += 24;
     }
-    private void resetWeights() {
-        set(Field.SMART_WEIGHT,"50"); set(Field.MONEY_WEIGHT,"50");
-        draft.working.economyActiveWeight=draft.working.experimentalWeight=0; validate();
-    }
-    private void preset(String minimum) { set(Field.LEADERBOARD_MIN,minimum); set(Field.LEADERBOARD_MAX,""); validate(); }
-    private void set(Field field, String value) { draft.text(field,value); EditBox box=fields.get(field); if(box!=null) box.setValue(value); }
-    private int total() {
-        try { return Integer.parseInt(draft.text(Field.SMART_WEIGHT)) + Integer.parseInt(draft.text(Field.MONEY_WEIGHT)); }
-        catch (RuntimeException ex) { return -1; }
-    }
+    public static String unavailablePaymentMessage() { return ExperimentalFeatures.UNAVAILABLE_MESSAGE; }
+    private void comingSoon() { notice=unavailablePaymentMessage(); }
     private void validate() {
         var errors=draft.validate(); error=errors.isEmpty()?"":errors.getFirst();
         if(context.configs().isReadOnly()) error="Newer config version: settings are read-only.";
@@ -91,17 +83,13 @@ public final class TargetingSettingsScreen extends Screen {
     @Override public void onClose(){minecraft.gui.setScreen(parent);}
     @Override public void extractRenderState(GuiGraphicsExtractor g,int mx,int my,float delta){
         super.extractRenderState(g,mx,my,delta); g.centeredText(font,title,width/2,15,0xFFFFFFFF);
-        g.centeredText(font,"Every candidate is verified online with /pay autocomplete before payment",width/2,30,0xFF99DDCC);
+        g.centeredText(font,"Active payments use the 1.2.4 random /pay prefix method",width/2,30,0xFF99DDCC);
         fields.forEach((field,box)->g.text(font,field.label,left,box.getY()+6,0xFFE0E0E0));
-        if(page==0){int total=total();g.centeredText(font,"Current total: "+(total<0?"invalid":total+"%"),width/2,184,total==100?0xFF99DDCC:0xFFFF8888);}
-        if(page==1){
-            String min=normalized(Field.LEADERBOARD_MIN), max=draft.text(Field.LEADERBOARD_MAX).isBlank()?"No maximum":normalized(Field.LEADERBOARD_MAX);
-            g.centeredText(font,"Normalized range: "+min+" – "+max,width/2,187,0xFFAAAAAA);
-        }
+        if(page==0)g.centeredText(font,"Saved experimental split: "+draft.working.smartRandomWeight+"% / "+draft.working.moneyLeaderboardWeight+"% (inactive)",width/2,184,0xFFAAAAAA);
         if(page==3) renderAnalytics(g);
         if(!error.isEmpty())g.centeredText(font,font.plainSubstrByWidth(error,panel),width/2,height-43,0xFFFF8888);
+        else if(!notice.isEmpty())g.centeredText(font,font.plainSubstrByWidth(notice,panel),width/2,height-43,0xFFFFBB66);
     }
-    private String normalized(Field field){try{return MoneyValues.display(MoneyValues.parse(draft.text(field)));}catch(RuntimeException ex){return "Invalid";}}
     private void renderAnalytics(GuiGraphicsExtractor g){
         int y=72; for(AnalyticsEngine.MethodStats s:context.targetingAnalytics().get()){
             if(s.method()!=com.jonsman.autogamble.targeting.TargetMethod.SMART_RANDOM && s.method()!=com.jonsman.autogamble.targeting.TargetMethod.MONEY_LEADERBOARD) continue;

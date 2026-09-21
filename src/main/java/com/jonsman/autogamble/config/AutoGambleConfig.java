@@ -2,7 +2,7 @@ package com.jonsman.autogamble.config;
 
 /** Mutable editing model; publish changes through ConfigManager.update on the client thread. */
 public final class AutoGambleConfig {
-    public int configVersion = 10;
+    public int configVersion = 11;
     public boolean tippingDisclosureAcknowledged = false;
     public boolean tippingPermanentlyDisabled = false;
     public boolean paymentSoundAlertsEnabled = true;
@@ -36,12 +36,13 @@ public final class AutoGambleConfig {
     }
     public boolean enabled = true, autoPayEnabled = false, gambleEnabled = false;
     public double autoPayAmount = 1;
+    public java.math.BigDecimal minimumPaymentBalance = java.math.BigDecimal.ZERO;
     public double minimumAutoPayDelaySeconds = 2, maximumAutoPayDelaySeconds = 5;
     public double winChance = 0.50, payoutMultiplier = 2;
     public boolean preferUnpaidPlayers = true;
     public boolean excludeNumericOnlyNames = true;
     public int minimumPrefixLength = 1, maximumPrefixLength = 3;
-    public int smartRandomWeight = 50, moneyLeaderboardWeight = 50, economyActiveWeight = 0, experimentalWeight = 0;
+    public int smartRandomWeight = 100, moneyLeaderboardWeight = 0, economyActiveWeight = 0, experimentalWeight = 0;
     public java.math.BigDecimal leaderboardMinimumBalance = new java.math.BigDecimal("500000000");
     public java.math.BigDecimal leaderboardMaximumBalance = null;
     public int baltopScanSpeed = 1; // 0 Safe, 1 Normal, 2 Fast
@@ -50,7 +51,7 @@ public final class AutoGambleConfig {
     public long winnerDelayMinimumMs = 200, winnerDelayMaximumMs = 700;
 
     public void validate() {
-        configVersion = 10;
+        configVersion = 11;
         minimumAlertSpacingMs = Math.clamp(minimumAlertSpacingMs, 0, 5000);
         autoPayConversionWindowSeconds = Math.clamp(autoPayConversionWindowSeconds, 0, 86400);
         autoPayAttributionDurationSeconds = Math.clamp(autoPayAttributionDurationSeconds, 0, 86400);
@@ -69,6 +70,7 @@ public final class AutoGambleConfig {
             }
         }
         if (!MoneyValues.valid(autoFollowThreshold, false)) autoFollowThreshold = new java.math.BigDecimal("5000000");
+        if (!MoneyValues.valid(minimumPaymentBalance, false)) minimumPaymentBalance = java.math.BigDecimal.ZERO;
         if (!MoneyValues.valid(recentMinimumAmount, false)) recentMinimumAmount = java.math.BigDecimal.ZERO;
         if (recentMaximumAmount != null && (!MoneyValues.valid(recentMaximumAmount, false) || recentMaximumAmount.compareTo(recentMinimumAmount) < 0)) recentMaximumAmount = null;
         recentMaxLines = Math.clamp(recentMaxLines, 1, 100000);
@@ -87,7 +89,7 @@ public final class AutoGambleConfig {
         economyActiveWeight = Math.clamp(economyActiveWeight, 0, 100);
         experimentalWeight = Math.clamp(experimentalWeight, 0, 100);
         if (smartRandomWeight + moneyLeaderboardWeight + economyActiveWeight + experimentalWeight != 100) {
-            smartRandomWeight = 50; moneyLeaderboardWeight = 50; economyActiveWeight = 0; experimentalWeight = 0;
+            smartRandomWeight = 100; moneyLeaderboardWeight = 0; economyActiveWeight = 0; experimentalWeight = 0;
         }
         // The retired website methods have no active implementation. Move their legacy weight to Smart Random.
         smartRandomWeight += economyActiveWeight + experimentalWeight;

@@ -14,7 +14,7 @@ Requires **Minecraft 26.2**, **Java 25**, **Fabric Loader 0.19.3**, and **Fabric
 
 ## Features
 
-- **Auto Pay:** weighted Smart Random Online and locally scanned Baltop targeting (50/50 by default). Every selected candidate receives a fresh exact-name `/pay` autocomplete verification before payment.
+- **Auto Pay:** recipients use the proven 1.2.4 random `/pay` prefix-suggestion flow. Baltop payment targeting remains visible as Coming Soon but is inactive. The optional Minimum Payment Balance is 0 (disabled) by default; when enabled, unknown player balances are skipped.
 - **Scanned Baltop:** explicitly start a tick-driven scan of the in-game `/baltop` inventory. The scanner locates Next Page by item name, records players, balances, rank and source page, and persists progress across restarts. Open **Advertising Targeting → Scanned Baltop** to browse, search, filter, sort, pause, resume, or confirm a reset. The scan temporarily pauses advertising and never needs a website or API key. Its item-text parser should be checked on the live server before relying on the database.
 - **Gambling:** recognizes incoming notices such as `Bob paid you $ 19.8k`. Supports K/M/B/T amounts, configurable win chance, bet limits, payout multiplier, and queued payouts.
 - **First-time bonus:** ON by default, adding **10 percentage points** to a player's first accepted bet, capped at 100%. Payer history persists across restarts. Accepted Dry Run bets also consume the bonus.
@@ -51,6 +51,6 @@ Payer history: `config/autogamble-payers.json`
 
 With Java 25, run `gradlew.bat test` then `gradlew.bat build` (Linux/macOS: `sh gradlew`).
 
-Version **1.3.1** fixes live-tested Baltop ordering and advertising verification. Earlier release JARs and historical source remain preserved. New builds go to `build/libs/`. See [v1.3.1 notes](docs/PATCH-1.3.1.md).
+Version **1.3.2** restores legacy Auto Pay recipients while retaining the baltop scanner for future development. Earlier release JARs and historical source remain preserved. New builds go to `build/libs/`. See [v1.3.2 notes](docs/PATCH-1.3.2.md).
 
 Before publishing each new version, archive the outgoing release's exact published JAR and matching sources JAR under `releases/archive/<version>/`. See the [release checklist](docs/RELEASING.md).

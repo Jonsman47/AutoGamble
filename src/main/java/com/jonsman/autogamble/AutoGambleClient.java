@@ -156,7 +156,7 @@ public final class AutoGambleClient implements ClientModInitializer {
                             + ", Lifetime Customers: " + stats.customers().size()));
                     return 1;
                 }))));
-        LOGGER.info("[AutoGamble] 1.3.1 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
+        LOGGER.info("[AutoGamble] 1.3.2 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
     }
     private void receive(Component message, ReceivedMessage.Channel channel) {
         var client = Minecraft.getInstance();

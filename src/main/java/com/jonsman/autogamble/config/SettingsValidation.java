@@ -45,6 +45,7 @@ public final class SettingsValidation {
                 || c.leaderboardMinimumBalance != null && c.leaderboardMaximumBalance.compareTo(c.leaderboardMinimumBalance) < 0))
             errors.add("Leaderboard maximum balance must be at least the minimum, or blank for no maximum.");
         range(errors, "Auto Pay Amount", c.autoPayAmount, .01, 1e9);
+        if (!MoneyValues.valid(c.minimumPaymentBalance, false)) errors.add("Minimum Payment Balance must be zero or a positive amount.");
         range(errors, "Minimum Pay Delay", c.minimumAutoPayDelaySeconds, .001, 86400);
         range(errors, "Maximum Pay Delay", c.maximumAutoPayDelaySeconds, c.minimumAutoPayDelaySeconds, 86400);
         range(errors, "First-Time Win Bonus", c.firstTimeWinBonus, 0, 1);

@@ -27,6 +27,7 @@ public final class SettingsDraft {
         SPAM_WINDOW("spamPaymentWindowSeconds", "Spam Detection Window (s)", true),
         SPAM_COOLDOWN("spamWarningCooldownSeconds", "Warning Cooldown (s)", true),
         AMOUNT("autoPayAmount", "Auto Pay Amount ($)", false),
+        MINIMUM_PAYMENT_BALANCE("minimumPaymentBalance", "Minimum Payment Balance", false),
         PAY_MIN("minimumAutoPayDelaySeconds", "Minimum Pay Delay (s)", false),
         PAY_MAX("maximumAutoPayDelaySeconds", "Maximum Pay Delay (s)", false),
         MULTIPLIER("payoutMultiplier", "Payout Multiplier", false),

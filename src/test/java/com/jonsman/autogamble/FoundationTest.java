@@ -51,8 +51,8 @@ class FoundationTest {
         var path = directory.resolve("autogamble.json");
         Files.writeString(path, "{\"autoPayAmount\":3}");
         var m = manager(); m.load();
-        assertEquals(3, m.snapshot().autoPayAmount); assertEquals(10, m.snapshot().configVersion);
-        String future = "{\"configVersion\":11,\"enabled\":true}";
+        assertEquals(3, m.snapshot().autoPayAmount); assertEquals(11, m.snapshot().configVersion);
+        String future = "{\"configVersion\":12,\"enabled\":true}";
         Files.writeString(path, future); m.load();
         assertFalse(m.snapshot().enabled); assertFalse(m.save()); assertEquals(future, Files.readString(path));
     }

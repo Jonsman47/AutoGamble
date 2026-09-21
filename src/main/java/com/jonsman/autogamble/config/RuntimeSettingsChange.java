@@ -8,6 +8,7 @@ public record RuntimeSettingsChange(boolean resetAutoPay, boolean clearPayouts, 
                 || (before != null && (before.enabled != after.enabled || before.autoPayEnabled != after.autoPayEnabled
                     || before.excludeNumericOnlyNames != after.excludeNumericOnlyNames
                     || before.preferUnpaidPlayers != after.preferUnpaidPlayers
+                    || !java.util.Objects.equals(before.minimumPaymentBalance, after.minimumPaymentBalance)
                     || before.minimumPrefixLength != after.minimumPrefixLength || before.maximumPrefixLength != after.maximumPrefixLength)),
                 !after.enabled || !after.gambleEnabled || mode, mode);
     }

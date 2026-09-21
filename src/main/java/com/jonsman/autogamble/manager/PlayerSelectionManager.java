@@ -22,6 +22,16 @@ public final class PlayerSelectionManager {
     public Optional<Candidate> select(List<Candidate> eligible, boolean preferUnpaid, java.util.random.RandomGenerator random) {
         return select(eligible, preferUnpaid, random, System.nanoTime());
     }
+    /** The exact pre-baltop selection policy from v1.2.4. */
+    public Optional<Candidate> selectLegacy(List<Candidate> eligible, boolean preferUnpaid, java.util.random.RandomGenerator random) {
+        if (eligible.isEmpty()) return Optional.empty();
+        List<Candidate> pool = eligible;
+        if (preferUnpaid) {
+            pool = eligible.stream().filter(c -> !wasPaid(c.username())).toList();
+            if (pool.isEmpty()) { paid.clear(); pool = eligible; }
+        }
+        return Optional.of(pool.get(random.nextInt(pool.size())));
+    }
     public Optional<Candidate> select(List<Candidate> eligible, boolean preferUnpaid, java.util.random.RandomGenerator random, long now) {
         recent.entrySet().removeIf(e -> now - e.getValue() >= RECENT_COOLDOWN_NANOS);
         List<Candidate> pool = eligible.stream().filter(c -> !recentlyPaid(c.username(), now)).toList();

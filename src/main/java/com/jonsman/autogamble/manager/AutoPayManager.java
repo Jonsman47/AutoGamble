@@ -49,7 +49,9 @@ public final class AutoPayManager {
             }
             invalidAmountReported = false;
             var candidates = environment.eligiblePlayers();
-            var target = selection.select(candidates, config.preferUnpaidPlayers, playerRandom, nowNanos);
+            var target = com.jonsman.autogamble.targeting.ExperimentalFeatures.BALTOP_PAYMENT_FEATURE_ENABLED
+                    ? selection.select(candidates, config.preferUnpaidPlayers, playerRandom, nowNanos)
+                    : selection.selectLegacy(candidates, config.preferUnpaidPlayers, playerRandom);
             if (target.isEmpty()) {
                 if (!emptyReported) LOG.info("[AutoGamble] No verified Auto Pay target found this cycle; retrying after the configured delay");
                 state = "NO_CANDIDATES"; emptyReported = true;
@@ -58,7 +60,9 @@ public final class AutoPayManager {
             emptyReported = false;
             if (environment.dispatch(target.get(), amount)) {
                 state = config.dryRunMode ? "SIMULATED" : "DISPATCHED";
-                selection.markPaid(target.get().username(), nowNanos);
+                if (com.jonsman.autogamble.targeting.ExperimentalFeatures.BALTOP_PAYMENT_FEATURE_ENABLED)
+                    selection.markPaid(target.get().username(), nowNanos);
+                else selection.markPaid(target.get().username());
                 LOG.info("[AutoGamble] {} /pay {} {}", config.dryRunMode ? "DRY RUN simulated" : "Dispatched", target.get().username(), amount);
             } else state = "DISPATCH_DEFERRED";
         } catch (RuntimeException e) {

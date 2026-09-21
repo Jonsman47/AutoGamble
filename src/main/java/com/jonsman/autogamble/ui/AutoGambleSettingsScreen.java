@@ -45,17 +45,22 @@ public final class AutoGambleSettingsScreen extends Screen {
             case 1 -> {
                 row = 70;
                 number(Field.AMOUNT, "Amount per advertising payment. At least $0.01.");
-                number(Field.PAY_MIN, "Lower bound for a fresh random delay after each attempt.");
-                number(Field.PAY_MAX, "Must be at least the minimum delay.");
+                number(Field.MINIMUM_PAYMENT_BALANCE, "Only send advertising payments to players with at least this known balance. Set to 0 to disable; unknown balances are skipped when enabled.");
                 toggle("Prefer Unpaid Players", () -> draft.working.preferUnpaidPlayers, v -> draft.working.preferUnpaidPlayers = v,
                         "Tries to pay each known candidate once before repeating.");
                 toggle("Skip Numeric-Only Names", () -> draft.working.excludeNumericOnlyNames, v -> draft.working.excludeNumericOnlyNames = v,
                         "Skips player names made entirely from numbers.");
-                button("Advertising Targeting…", left, row, panel, () -> minecraft.gui.setScreen(new TargetingSettingsScreen(this, context, draft))); row += 21;
-                button("Prefix Length…", left + panel / 2 + 3, row, panel / 2 - 3, () -> { page = 8; rebuildWidgets(); });
+                button("Payment Timing…", left, row, panel / 2 - 3, () -> { page = 11; rebuildWidgets(); });
+                button("Prefix Length…", left + panel / 2 + 3, row, panel / 2 - 3, () -> { page = 8; rebuildWidgets(); }); row += 21;
+                button("Advertising Targeting…", left, row, panel / 2 - 3, () -> minecraft.gui.setScreen(new TargetingSettingsScreen(this, context, draft)));
                 button("Reset Paid History…", left, row, panel / 2 - 3, () -> minecraft.gui.setScreen(new ConfirmScreen(yes -> {
                     if (yes) context.resetPaid().run(); minecraft.gui.setScreen(this);
                 }, Component.literal("Reset paid player history?"), Component.literal("This clears the current cycle immediately."))));
+            }
+            case 11 -> {
+                number(Field.PAY_MIN, "Lower bound for a fresh random delay after each attempt.");
+                number(Field.PAY_MAX, "Must be at least the minimum delay.");
+                button("Back to Auto Pay", left, row + 8, panel, () -> { page = 1; rebuildWidgets(); });
             }
             case 2 -> {
                 var slider = addRenderableWidget(new WinChanceSlider(left, row, panel, draft.working.winChance, v -> { draft.working.winChance = v; validateDraft(); }));
@@ -166,9 +171,10 @@ public final class AutoGambleSettingsScreen extends Screen {
     @Override public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float delta) {
         super.extractRenderState(g, mx, my, delta);
         g.centeredText(font, title, width / 2, 15, 0xFFFFFFFF);
-        g.centeredText(font, "1.3.1  •  " + (draft.working.dryRunMode ? "DRY RUN — no real payments" : "REAL PAYMENTS") + "  •  Save to apply", width / 2, 30, draft.working.dryRunMode ? 0xFF99DDCC : 0xFFFFBB66);
+        g.centeredText(font, "1.3.2  •  " + (draft.working.dryRunMode ? "DRY RUN — no real payments" : "REAL PAYMENTS") + "  •  Save to apply", width / 2, 30, draft.working.dryRunMode ? 0xFF99DDCC : 0xFFFFBB66);
         fields.forEach((field, box) -> g.text(font, field.label, left, box.getY() + 6, 0xFFE0E0E0));
         if (page == 0 && height > 300) g.centeredText(font, font.plainSubstrByWidth(status, panel), width / 2, height - 48, 0xFFAAAAAA);
+        if (page == 1) g.text(font, "Minimum Payment Balance: 0 disables the filter", left, 199, 0xFF99DDCC);
         if (page == 3) g.textWithWordWrap(font, Component.literal("Winners are paid one at a time. Disabling gambling clears pending payouts."), left, 132, panel, 0xFFAAAAAA);
         if (page == 4 && height > 300) g.textWithWordWrap(font, Component.literal("DonutSMP incoming payments are supported. Test messages in dry run before enabling real payments."), left, 190, panel, 0xFFAAAAAA);
         if (page == 5) {

@@ -32,6 +32,11 @@ public final class BaltopDatabase implements AutoCloseable {
     public synchronized Snapshot snapshot() {
         return new Snapshot(List.copyOf(entries.values()), highestPage, scanStarted, lastScan, complete, duplicates, warning);
     }
+    /** Optional per-player balance evidence for the legacy recipient filter; never selects recipients. */
+    public synchronized BigDecimal balanceOf(String username) {
+        BaltopEntry entry = username == null ? null : entries.get(username.toLowerCase(Locale.ROOT));
+        return entry == null ? null : entry.balance();
+    }
     /** Only a contiguous, nonempty page advances resume metadata; the newest observation wins for duplicate names. */
     public synchronized boolean recordPage(int page, List<BaltopEntry> rows, long now) {
         if (page < 1 || page > highestPage + 1 || rows == null || rows.isEmpty()) return false;

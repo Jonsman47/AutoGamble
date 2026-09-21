@@ -18,7 +18,8 @@ class TargetingSystemTest {
         return new BaltopEntry(name,new BigDecimal(balance),rank,page,100);
     }
     @Test void weightsValidateAndRedistribute() {
-        var c=new AutoGambleConfig(); assertEquals(50,c.smartRandomWeight);assertEquals(50,c.moneyLeaderboardWeight);
+        var c=new AutoGambleConfig(); assertEquals(100,c.smartRandomWeight);assertEquals(0,c.moneyLeaderboardWeight);
+        c.smartRandomWeight=50;c.moneyLeaderboardWeight=50; // Preserve the weighted-selector regression for future activation.
         var counts=new EnumMap<TargetMethod,Integer>(TargetMethod.class);var random=new Random(9);
         for(int i=0;i<100_000;i++) counts.merge(WeightedTargetSelector.select(c,EnumSet.allOf(TargetMethod.class),random).orElseThrow(),1,Integer::sum);
         assertEquals(.5,counts.get(TargetMethod.SMART_RANDOM)/100000.0,.01);
@@ -77,7 +78,7 @@ class TargetingSystemTest {
         assertFalse(OnlineVerification.exactUsername(List.of("Local"),"Local","local"));
         Path path=directory.resolve("autogamble.json");Files.writeString(path,"{\"configVersion\":8,\"autoPayAmount\":77}");
         var manager=new ConfigManager(path,LoggerFactory.getLogger("test"));manager.load();var c=manager.snapshot();
-        assertEquals(77,c.autoPayAmount);assertEquals(50,c.smartRandomWeight);assertEquals(50,c.moneyLeaderboardWeight);
+        assertEquals(77,c.autoPayAmount);assertEquals(100,c.smartRandomWeight);assertEquals(0,c.moneyLeaderboardWeight);
         Files.writeString(path,"{\"configVersion\":9,\"smartRandomWeight\":50,\"moneyLeaderboardWeight\":30,\"economyActiveWeight\":15,\"experimentalWeight\":5}");
         manager.load();c=manager.snapshot();assertEquals(70,c.smartRandomWeight);assertEquals(30,c.moneyLeaderboardWeight);
         assertEquals(0,c.economyActiveWeight);assertEquals(0,c.experimentalWeight);
