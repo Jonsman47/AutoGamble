@@ -52,3 +52,5 @@ Payer history: `config/autogamble-payers.json`
 With Java 25, run `gradlew.bat test` then `gradlew.bat build` (Linux/macOS: `sh gradlew`).
 
 Version **1.2.5** adds configurable weighted advertising targets, online verification, cached public leaderboard providers, balance filters, and per-method analytics. Earlier release JARs remain preserved under `releases/`. New builds go to `build/libs/`. See [v1.2.5 notes](docs/PATCH-1.2.5.md).
+
+Before publishing each new version, archive the outgoing release's exact published JAR and matching sources JAR under `releases/archive/<version>/`. See the [release checklist](docs/RELEASING.md).
