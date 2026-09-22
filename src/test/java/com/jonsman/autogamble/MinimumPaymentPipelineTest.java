@@ -83,6 +83,13 @@ class MinimumPaymentPipelineTest {
         assertTrue(h.paymentTrace.getFirst().startsWith("candidate=Bob queueAtPayment=2 at="));
         h.tick(h.dueAfter(first));assertEquals(List.of("pay Bob 1","pay Charlie 1"),h.commands);
     }
+    @Test void defaultTwentyFiveMillionThresholdReachesFakePaymentSink() {
+        var h=new Harness("25M");h.candidates("Low","Equal","High");
+        h.balance("Low","24.9M");h.balance("Equal","25M");h.balance("High","100M");
+        assertEquals(new EligibleRecipientQueue.Refill(3,2),h.refill());
+        h.tick(0);long first=h.dueAfter(0);h.tick(first);h.tick(h.dueAfter(first));
+        assertEquals(List.of("pay Equal 1","pay High 1"),h.commands);
+    }
     @Test void unknownBalanceDoesNotBlockKnownRecipient() {
         var h=new Harness("100M");h.candidates("Alice","Bob");h.balance("Bob","150M");
         assertEquals(1,h.refill().accepted());h.tick(0);h.tick(h.dueAfter(0));

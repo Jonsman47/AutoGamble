@@ -33,7 +33,7 @@ class PrefixDiscoveryTest {
     @Test void noRepeatedFailedLetters() { var seen=new HashSet<String>(); long now=0; for(int i=0;i<26;i++){var r=request(now); assertTrue(seen.add(r.prefix())); complete(r,List.of(),now); now+=PrefixPlayerDiscovery.RETRY;} }
     @Test void maximum26() { long now=0; for(int i=0;i<26;i++){var r=request(now);complete(r,List.of(),now);now+=PrefixPlayerDiscovery.RETRY;} assertTrue(d.poll(now,h,true).isEmpty()); assertTrue(d.ready()); assertTrue(d.candidates().isEmpty()); }
     List<String> run(boolean dry) {
-        var c=new AutoGambleConfig(); c.autoPayEnabled=true; c.dryRunMode=dry; c.minimumAutoPayDelaySeconds=c.maximumAutoPayDelaySeconds=1;
+        var c=new AutoGambleConfig(); c.autoPayEnabled=true; c.dryRunMode=dry; c.minimumPaymentBalance=BigDecimal.ZERO; c.minimumAutoPayDelaySeconds=c.maximumAutoPayDelaySeconds=1;
         var sent=new ArrayList<String>(); var manager=new AutoPayManager(new Random(1),new Random(2));
         AutoPayEnvironment env=new AutoPayEnvironment(){
             public boolean connected(){return true;} public boolean inputBlocked(){return false;}

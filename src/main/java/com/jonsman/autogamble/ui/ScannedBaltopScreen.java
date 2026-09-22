@@ -13,13 +13,13 @@ import java.util.*;
 /** Dedicated local-data browser; the scan itself runs over client ticks after this screen closes. */
 public final class ScannedBaltopScreen extends Screen {
     private final Screen parent; private final SettingsContext context;
-    private int tab, offset, left, panel; private BaltopSorting.Sort sort=BaltopSorting.Sort.RANK;
+    private int tab, offset, left, panel, accent; private BaltopSorting.Sort sort=BaltopSorting.Sort.RANK;
     private String search="", minimum="", maximum="", warning="";
     private List<BaltopEntry> visible=List.of();
     public ScannedBaltopScreen(Screen parent,SettingsContext context){super(Component.literal("Scanned Baltop"));this.parent=parent;this.context=context;}
     private Button button(String text,int x,int y,int width,Runnable action){return addRenderableWidget(Button.builder(Component.literal(text),b->action.run()).bounds(x,y,width,20).build());}
     @Override protected void init(){
-        panel=Math.min(520,width-24);left=(width-panel)/2;
+        panel=Math.min(520,width-24);left=(width-panel)/2;accent=UiAccent.rgb(context.configs().snapshot());
         int tabWidth=panel/3;
         button("Scan Status",left,44,tabWidth-2,()->{tab=0;rebuildWidgets();}).active=tab!=0;
         button("Browse Players",left+tabWidth,44,tabWidth-2,()->{tab=1;rebuildWidgets();}).active=tab!=1;
@@ -66,7 +66,7 @@ public final class ScannedBaltopScreen extends Screen {
     @Override public void extractRenderState(GuiGraphicsExtractor g,int mx,int my,float delta){
         super.extractRenderState(g,mx,my,delta);g.centeredText(font,title,width/2,15,0xFFFFFFFF);
         var data=context.baltopData().get();var status=context.baltopStatus().get();
-        g.centeredText(font,"Players "+data.entries().size()+"  •  Highest page "+data.highestPage()+"  •  "+status.state(),width/2,30,0xFF99DDCC);
+        g.centeredText(font,"Players "+data.entries().size()+"  •  Highest page "+data.highestPage()+"  •  "+status.state(),width/2,30,accent);
         if(tab==0){
             int y=130;String date=data.lastScan()==0?"Never":DateFormat.getDateTimeInstance().format(new Date(data.lastScan()));
             for(String line:new String[]{"Current page: "+status.currentPage()+"  •  Last parsed: "+status.lastParsed(),

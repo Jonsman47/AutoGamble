@@ -15,6 +15,7 @@ class AutoPayTest {
     private final PlayerSelectionManager selection = new PlayerSelectionManager();
     private final AutoPayManager manager = new AutoPayManager(new Random(72), new Random(99));
     private final AutoGambleConfig config = new AutoGambleConfig();
+    { config.minimumPaymentBalance = BigDecimal.ZERO; config.minimumAutoPayDelaySeconds = 2; config.maximumAutoPayDelaySeconds = 5; }
     private final FakeEnvironment env = new FakeEnvironment();
     private class FakeEnvironment implements AutoPayEnvironment {
         boolean connected = true, blocked, succeeds = true, throwsOnDispatch;

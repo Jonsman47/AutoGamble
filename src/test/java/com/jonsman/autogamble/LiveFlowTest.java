@@ -47,7 +47,7 @@ class LiveFlowTest {
     @Test void dryWinnerRollsWithoutCommand() { assertTrue(winner(true).isEmpty()); }
     @Test void realWinnerSendsOnce() { assertEquals(List.of("pay JonsmanV6or7 39600"), winner(false)); }
     List<String> advertising(boolean dry) {
-        load("Bob"); c.autoPayEnabled = true; c.dryRunMode = dry;
+        load("Bob"); c.autoPayEnabled = true; c.dryRunMode = dry; c.minimumPaymentBalance = BigDecimal.ZERO;
         c.minimumAutoPayDelaySeconds = c.maximumAutoPayDelaySeconds = 1;
         var commands = new ArrayList<String>(); var manager = new AutoPayManager();
         AutoPayEnvironment env = new AutoPayEnvironment() {

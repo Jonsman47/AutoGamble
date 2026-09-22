@@ -54,8 +54,8 @@ class LegacyPaymentRestorationTest {
         Path path=directory.resolve("autogamble.json");
         Files.writeString(path,"{\"configVersion\":10,\"smartRandomWeight\":0,\"moneyLeaderboardWeight\":100,\"autoPayAmount\":67}");
         var manager=new ConfigManager(path,LoggerFactory.getLogger("test"));manager.load();
-        assertEquals(11,manager.snapshot().configVersion);
-        assertEquals(BigDecimal.ZERO,manager.snapshot().minimumPaymentBalance);
+        assertEquals(12,manager.snapshot().configVersion);
+        assertEquals(0,new BigDecimal("25000000").compareTo(manager.snapshot().minimumPaymentBalance));
         assertEquals(100,manager.snapshot().moneyLeaderboardWeight);assertFalse(ExperimentalFeatures.BALTOP_PAYMENT_FEATURE_ENABLED);
         manager.update(c->c.minimumPaymentBalance=MoneyValues.parse("5M"));manager.load();
         assertEquals(0,manager.snapshot().minimumPaymentBalance.compareTo(new BigDecimal("5000000")));

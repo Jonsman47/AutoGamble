@@ -35,7 +35,7 @@ public final class AdvancedParserScreen extends Screen {
     @Override public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float delta) {
         super.extractRenderState(g, mx, my, delta);
         g.centeredText(font, title, width / 2, 16, 0xFFFFFFFF);
-        g.centeredText(font, enabledCount + " enabled patterns in draft", width / 2, 33, 0xFF99DDCC);
+        g.centeredText(font, enabledCount + " enabled patterns in draft", width / 2, 33, UiAccent.rgb(draft.working));
         g.textWithWordWrap(font, Component.literal("DonutSMP incoming format is built in. Import additional JSON patterns if needed. Test expanded K/M/B/T amounts below."), left, 51, panel, 0xFFBBBBBB);
         g.text(font, "Test Payment Message", left, 91, 0xFFE0E0E0);
         g.textWithWordWrap(font, Component.literal(result), left, 166, panel, 0xFFDDDDDD);

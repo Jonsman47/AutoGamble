@@ -2,7 +2,10 @@ package com.jonsman.autogamble.config;
 
 /** Mutable editing model; publish changes through ConfigManager.update on the client thread. */
 public final class AutoGambleConfig {
-    public int configVersion = 11;
+    public int configVersion = 12;
+    public java.util.List<String> quickCommands = defaultQuickCommands();
+    public boolean compactMenu = false, showLessUsedSections = true;
+    public String accentColor = "55DDBB";
     public boolean tippingDisclosureAcknowledged = false;
     public boolean tippingPermanentlyDisabled = false;
     public boolean paymentSoundAlertsEnabled = true;
@@ -25,7 +28,7 @@ public final class AutoGambleConfig {
     public String spamWarningMessage = DEFAULT_SPAM_MESSAGE;
     public boolean dryRunMode = true;
     public boolean firstTimePayerBonusEnabled = true;
-    public double firstTimeWinBonus = 0.10;
+    public double firstTimeWinBonus = 0.15;
     public java.util.List<IncomingPattern> incomingPaymentPatterns = new java.util.ArrayList<>();
     public long receiptDeduplicationWindowMs = 2000, outgoingPaymentTrackingWindowMs = 10000;
     public static final class IncomingPattern {
@@ -36,9 +39,9 @@ public final class AutoGambleConfig {
     }
     public boolean enabled = true, autoPayEnabled = false, gambleEnabled = false;
     public double autoPayAmount = 1;
-    public java.math.BigDecimal minimumPaymentBalance = java.math.BigDecimal.ZERO;
-    public double minimumAutoPayDelaySeconds = 2, maximumAutoPayDelaySeconds = 5;
-    public double winChance = 0.50, payoutMultiplier = 2;
+    public java.math.BigDecimal minimumPaymentBalance = new java.math.BigDecimal("25000000");
+    public double minimumAutoPayDelaySeconds = .2, maximumAutoPayDelaySeconds = 1.8;
+    public double winChance = 0.425, payoutMultiplier = 2;
     public boolean preferUnpaidPlayers = true;
     public boolean excludeNumericOnlyNames = true;
     public int minimumPrefixLength = 1, maximumPrefixLength = 3;
@@ -47,11 +50,15 @@ public final class AutoGambleConfig {
     public java.math.BigDecimal leaderboardMaximumBalance = null;
     public int baltopScanSpeed = 1; // 0 Safe, 1 Normal, 2 Fast
     public int baltopMaxChecksPerCycle = 30;
-    public double minimumBet = 1, maximumBet = 1_000_000;
-    public long winnerDelayMinimumMs = 200, winnerDelayMaximumMs = 700;
+    public double minimumBet = 1, maximumBet = 100_000_000;
+    public long winnerDelayMinimumMs = 250, winnerDelayMaximumMs = 1000;
 
     public void validate() {
-        configVersion = 11;
+        configVersion = 12;
+        if (quickCommands == null) quickCommands = defaultQuickCommands();
+        quickCommands = new java.util.ArrayList<>(quickCommands.stream().filter(QuickCommands::valid).distinct().limit(12).toList());
+        if (accentColor == null || !accentColor.matches("(?i)[0-9a-f]{6}")) accentColor = "55DDBB";
+        accentColor = accentColor.toUpperCase(java.util.Locale.ROOT);
         minimumAlertSpacingMs = Math.clamp(minimumAlertSpacingMs, 0, 5000);
         autoPayConversionWindowSeconds = Math.clamp(autoPayConversionWindowSeconds, 0, 86400);
         autoPayAttributionDurationSeconds = Math.clamp(autoPayAttributionDurationSeconds, 0, 86400);
@@ -70,7 +77,7 @@ public final class AutoGambleConfig {
             }
         }
         if (!MoneyValues.valid(autoFollowThreshold, false)) autoFollowThreshold = new java.math.BigDecimal("5000000");
-        if (!MoneyValues.valid(minimumPaymentBalance, false)) minimumPaymentBalance = java.math.BigDecimal.ZERO;
+        if (!MoneyValues.valid(minimumPaymentBalance, false)) minimumPaymentBalance = new java.math.BigDecimal("25000000");
         if (!MoneyValues.valid(recentMinimumAmount, false)) recentMinimumAmount = java.math.BigDecimal.ZERO;
         if (recentMaximumAmount != null && (!MoneyValues.valid(recentMaximumAmount, false) || recentMaximumAmount.compareTo(recentMinimumAmount) < 0)) recentMaximumAmount = null;
         recentMaxLines = Math.clamp(recentMaxLines, 1, 100000);
@@ -105,16 +112,25 @@ public final class AutoGambleConfig {
         incomingPaymentPatterns = new java.util.ArrayList<>(incomingPaymentPatterns.stream()
                 .filter(p -> p != null && p.regex != null && p.regex.length() <= 512).limit(16).toList());
         autoPayAmount = bounded(autoPayAmount, 1, 0, 1_000_000_000);
-        minimumAutoPayDelaySeconds = bounded(minimumAutoPayDelaySeconds, 2, 0.001, 86400);
+        minimumAutoPayDelaySeconds = bounded(minimumAutoPayDelaySeconds, .2, 0.001, 86400);
         maximumAutoPayDelaySeconds = Math.max(minimumAutoPayDelaySeconds,
-                bounded(maximumAutoPayDelaySeconds, 5, 0.001, 86400));
-        firstTimeWinBonus = bounded(firstTimeWinBonus, .10, 0, 1);
-        winChance = bounded(winChance, .5, 0, 1);
+                bounded(maximumAutoPayDelaySeconds, 1.8, 0.001, 86400));
+        firstTimeWinBonus = bounded(firstTimeWinBonus, .15, 0, 1);
+        winChance = bounded(winChance, .425, 0, 1);
         payoutMultiplier = bounded(payoutMultiplier, 2, .001, 1000);
         minimumBet = bounded(minimumBet, 1, 0, 1_000_000_000);
-        maximumBet = Math.max(minimumBet, bounded(maximumBet, 1_000_000, 0, 1_000_000_000));
+        maximumBet = Math.max(minimumBet, bounded(maximumBet, 100_000_000, 0, 1_000_000_000));
         winnerDelayMinimumMs = Math.clamp(winnerDelayMinimumMs, 0, 86_400_000);
         winnerDelayMaximumMs = Math.clamp(winnerDelayMaximumMs, winnerDelayMinimumMs, 86_400_000);
+    }
+    public static java.util.List<String> defaultQuickCommands() {
+        return new java.util.ArrayList<>(java.util.List.of("/bal", "/pay", "/baltop", "/settings gamble"));
+    }
+    public void resetCustomization() {
+        quickCommands = defaultQuickCommands();
+        compactMenu = false;
+        showLessUsedSections = true;
+        accentColor = "55DDBB";
     }
     private static double bounded(double value, double fallback, double min, double max) {
         return Double.isFinite(value) ? Math.clamp(value, min, max) : fallback;

@@ -14,10 +14,10 @@ Requires **Minecraft 26.2**, **Java 25**, **Fabric Loader 0.19.3**, and **Fabric
 
 ## Features
 
-- **Auto Pay:** recipients use the proven 1.2.4 random `/pay` prefix-suggestion flow. Baltop payment targeting remains visible as Coming Soon but is inactive. The optional Minimum Payment Balance is 0 (disabled) by default; when enabled, unknown player balances are skipped.
-- **Scanned Baltop:** explicitly start a tick-driven scan of the in-game `/baltop` inventory. The scanner locates Next Page by item name, records players, balances, rank and source page, and persists progress across restarts. Open **Advertising Targeting → Scanned Baltop** to browse, search, filter, sort, pause, resume, or confirm a reset. The scan temporarily pauses advertising and never needs a website or API key. Its item-text parser should be checked on the live server before relying on the database.
+- **Auto Pay:** recipients use the proven 1.2.4 random `/pay` prefix-suggestion flow. Baltop payment targeting remains visible as Coming Soon but is inactive. New installs default Minimum Payment Balance to **25M**; this requires known balances from a manual Baltop scan. Unknown balances are skipped. Set the minimum to **0** for the unfiltered 1.2.4 payment behavior.
+- **Scanned Baltop:** explicitly start a tick-driven scan of the in-game `/baltop` inventory. The scanner locates Next Page by item name, records players, balances, rank and source page, and persists progress across restarts. Open **Data & Advanced → Experimental Baltop → Scanned Baltop** to browse, search, filter, sort, pause, resume, or confirm a reset. The scan temporarily pauses advertising and never needs a website or API key. Its item-text parser should be checked on the live server before relying on the database.
 - **Gambling:** recognizes incoming notices such as `Bob paid you $ 19.8k`. Supports K/M/B/T amounts, configurable win chance, bet limits, payout multiplier, and queued payouts.
-- **First-time bonus:** ON by default, adding **10 percentage points** to a player's first accepted bet, capped at 100%. Payer history persists across restarts. Accepted Dry Run bets also consume the bonus.
+- **First-time bonus:** ON by default, adding **15 percentage points** to a player's first accepted bet, capped at 100%. Payer history persists across restarts. Accepted Dry Run bets also consume the bonus. New profiles default to a 42.5% base win chance, a $100M maximum bet, and a 250–1000 ms winner delay.
 
 - **Payment-spam warnings:** automatically sends `/msg` after 3 payments from the same player within 10 seconds, with a 60-second cooldown by default. Configure the toggle, threshold, window, and cooldown under **Advanced → Spam Payment Warning**. The message can be customized using `spamWarningMessage` in the config file. Dry Run logs warnings without sending them.
 
@@ -28,7 +28,7 @@ Requires **Minecraft 26.2**, **Java 25**, **Fabric Loader 0.19.3**, and **Fabric
 - **Analytics:** four in-game pages show current-session results, theoretical EV, persistent customer profitability, and session/lifetime Auto-Pay ROI. Auto-Pay attribution uses configurable last-touch conversion and attribution windows.
 - **Local command help:** `/help gamble` and `/help gamble <page>` show the complete AutoGamble command registry without sending the command to the server.
 
-Open **General** for automation, sound, and analytics pages. See [the v1.2.1 guide](docs/PATCH-1.2.1.md) for the new settings and data path.
+The settings menu is grouped into **Automation**, **Gambling**, **Data & Advanced**, and **Customization**. Customization includes user-clicked quick commands, compact spacing, optional less-used sections, and an RGB accent color. See [the v1.4.0 notes](docs/PATCH-1.4.0.md) for changes since 1.2.4.
 
 ## Controls
 
@@ -51,6 +51,6 @@ Payer history: `config/autogamble-payers.json`
 
 With Java 25, run `gradlew.bat test` then `gradlew.bat build` (Linux/macOS: `sh gradlew`).
 
-Version **1.3.4** fixes minimum balance payments for existing scanned data and refreshes balances when known baltop pages are scanned again. Legacy `/pay` suggestions still supply names, and baltop payment modes remain inactive. Earlier release JARs and historical source remain preserved. New builds go to `build/libs/`. See [v1.3.4 notes](docs/PATCH-1.3.4.md).
+Version **1.4.0** adds new-install defaults and a reorganized settings menu while preserving existing profiles and the stable legacy payment source. Earlier release JARs and historical source remain preserved. New builds go to `build/libs/`. See [v1.4.0 notes](docs/PATCH-1.4.0.md).
 
 Before publishing each new version, archive the outgoing release's exact published JAR and matching sources JAR under `releases/archive/<version>/`. See the [release checklist](docs/RELEASING.md).

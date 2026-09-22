@@ -43,6 +43,13 @@ public final class ConfigManager {
                         if (!value.isJsonArray()) throw new JsonParseException("Rules must be an array");
                         continue;
                     }
+                    if (entry.getKey().equals("quickCommands")) {
+                        if (!value.isJsonArray()) throw new JsonParseException("Quick commands must be an array");
+                        for (JsonElement item : value.getAsJsonArray())
+                            if (!item.isJsonPrimitive() || !item.getAsJsonPrimitive().isString() || !QuickCommands.valid(item.getAsString()))
+                                throw new JsonParseException("Invalid quick command");
+                        continue;
+                    }
                     if (entry.getKey().equals("paymentAlertTiers")) {
                         if (!value.isJsonArray()) throw new JsonParseException("Alert tiers must be an array");
                         for (JsonElement item : value.getAsJsonArray()) {
@@ -84,7 +91,7 @@ public final class ConfigManager {
                 for (String key : new String[]{"recentMaxLines", "storedTransactionHistoryLimit", "spamPaymentThreshold", "spamPaymentWindowSeconds", "spamWarningCooldownSeconds", "minimumPrefixLength", "maximumPrefixLength", "smartRandomWeight", "moneyLeaderboardWeight", "economyActiveWeight", "experimentalWeight", "baltopScanSpeed", "baltopMaxChecksPerCycle", "winnerDelayMinimumMs", "winnerDelayMaximumMs", "receiptDeduplicationWindowMs", "outgoingPaymentTrackingWindowMs", "minimumAlertSpacingMs", "autoPayConversionWindowSeconds", "autoPayAttributionDurationSeconds"}) {
                     if (object.has(key)) object.get(key).getAsBigDecimal().longValueExact();
                 }
-                if (version > 11) {
+                if (version > 12) {
                     futureVersion = true;
                     config.enabled = false;
                     log.warn("[AutoGamble] Newer config version {}; using disabled defaults without overwriting", version);
@@ -105,7 +112,9 @@ public final class ConfigManager {
     private void migrate(JsonObject object, int version) {
         if (version < 0) throw new JsonParseException("Negative configVersion");
         // Version 0 means an unversioned file. Missing fields retain constructor defaults.
-        if (version <= 10) object.addProperty("configVersion", 11);
+        if (version <= 11) {
+            object.addProperty("configVersion", 12);
+        }
     }
     public void update(Consumer<AutoGambleConfig> editor) {
         if (futureVersion) {

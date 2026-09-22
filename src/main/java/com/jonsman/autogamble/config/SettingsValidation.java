@@ -7,6 +7,9 @@ public final class SettingsValidation {
     private SettingsValidation() {}
     public static List<String> errors(AutoGambleConfig c) {
         List<String> errors = new ArrayList<>();
+        if (c.quickCommands == null || c.quickCommands.size() > 12 || c.quickCommands.stream().anyMatch(command -> !QuickCommands.valid(command)))
+            errors.add("Quick commands must be valid /commands (up to 12).");
+        if (c.accentColor == null || !c.accentColor.matches("(?i)[0-9a-f]{6}")) errors.add("Accent color must be a six-digit RGB hex value.");
         range(errors, "Minimum Alert Spacing", c.minimumAlertSpacingMs, 0, 5000);
         range(errors, "Auto-Pay Conversion Window", c.autoPayConversionWindowSeconds, 0, 86400);
         range(errors, "Auto-Pay Attribution Duration", c.autoPayAttributionDurationSeconds, 0, 86400);

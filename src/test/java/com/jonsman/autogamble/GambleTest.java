@@ -169,7 +169,7 @@ class GambleTest {
         Random rng = new Random(5); Set<Long> delays = new HashSet<>();
         for (int i = 0; i < 1000; i++) {
             long delay = WinnerPayoutProcessor.randomDelayNanos(config, rng);
-            assertTrue(delay >= 200_000_000L && delay <= 700_000_000L); delays.add(delay);
+            assertTrue(delay >= 250_000_000L && delay <= 1_000_000_000L); delays.add(delay);
         }
         assertTrue(delays.size() > 100);
         config.winnerDelayMinimumMs = config.winnerDelayMaximumMs = 0;
@@ -211,7 +211,7 @@ class GambleTest {
         Path path = directory.resolve("autogamble.json");
         Files.writeString(path, "{\"configVersion\":1,\"enabled\":false,\"autoPayEnabled\":true,\"autoPayAmount\":37,\"winChance\":0.55}");
         ConfigManager manager = new ConfigManager(path, org.slf4j.LoggerFactory.getLogger("test")); manager.load();
-        var c = manager.snapshot(); assertEquals(11, c.configVersion); assertFalse(c.enabled); assertTrue(c.autoPayEnabled);
+        var c = manager.snapshot(); assertEquals(12, c.configVersion); assertFalse(c.enabled); assertTrue(c.autoPayEnabled);
         assertEquals(37, c.autoPayAmount); assertEquals(.55, c.winChance); assertEquals(2000, c.receiptDeduplicationWindowMs);
         assertTrue(c.incomingPaymentPatterns.isEmpty());
         manager.update(edit -> edit.incomingPaymentPatterns.add(pattern(EXAMPLE))); manager.load();

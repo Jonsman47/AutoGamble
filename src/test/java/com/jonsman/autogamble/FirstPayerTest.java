@@ -37,6 +37,6 @@ class FirstPayerTest {
  @Test void bonusZero(){c.firstTimeWinBonus=0;assertEquals(GambleManager.Outcome.LOSS,bet("Bob","100",0));}
  @Test void statusCount(){bet("Bob","100",0);assertEquals(1,g.knownPayers());}
  @Test void corruptRecovers() throws Exception {var path=dir.resolve("payers.json");Files.writeString(path,"broken");var history=assertDoesNotThrow(()->new PayerHistory(path));history.add("Alice");assertTrue(new PayerHistory(path).contains("Alice"));assertTrue(Files.list(dir).anyMatch(p->p.getFileName().toString().contains("corrupt")));}
- @Test void defaultsAndMigration() throws Exception {var path=dir.resolve("config.json");Files.writeString(path,"{\"configVersion\":4,\"winChance\":0.394}");var m=new ConfigManager(path,org.slf4j.LoggerFactory.getLogger("test"));m.load();assertEquals(.394,m.snapshot().winChance);assertTrue(m.snapshot().firstTimePayerBonusEnabled);assertEquals(.1,m.snapshot().firstTimeWinBonus);}
+ @Test void defaultsAndMigration() throws Exception {var path=dir.resolve("config.json");Files.writeString(path,"{\"configVersion\":4,\"winChance\":0.394}");var m=new ConfigManager(path,org.slf4j.LoggerFactory.getLogger("test"));m.load();assertEquals(.394,m.snapshot().winChance);assertTrue(m.snapshot().firstTimePayerBonusEnabled);assertEquals(.15,m.snapshot().firstTimeWinBonus);}
  @Test void invalidBonusRejected(){c.firstTimeWinBonus=1.1;assertFalse(SettingsValidation.errors(c).isEmpty());}
 }

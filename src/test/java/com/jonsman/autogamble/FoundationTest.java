@@ -17,7 +17,7 @@ class FoundationTest {
     @Test void defaultsPersistAndEditsSurviveReload() throws Exception {
         var m = manager(); m.load();
         assertFalse(m.snapshot().autoPayEnabled);
-        assertEquals(5, m.snapshot().maximumAutoPayDelaySeconds);
+        assertEquals(1.8, m.snapshot().maximumAutoPayDelaySeconds);
         m.update(c -> { c.enabled = false; c.minimumAutoPayDelaySeconds = 1; c.maximumAutoPayDelaySeconds = 10; });
         var restored = manager(); restored.load();
         assertFalse(restored.snapshot().enabled);
@@ -51,8 +51,8 @@ class FoundationTest {
         var path = directory.resolve("autogamble.json");
         Files.writeString(path, "{\"autoPayAmount\":3}");
         var m = manager(); m.load();
-        assertEquals(3, m.snapshot().autoPayAmount); assertEquals(11, m.snapshot().configVersion);
-        String future = "{\"configVersion\":12,\"enabled\":true}";
+        assertEquals(3, m.snapshot().autoPayAmount); assertEquals(12, m.snapshot().configVersion);
+        String future = "{\"configVersion\":13,\"enabled\":true}";
         Files.writeString(path, future); m.load();
         assertFalse(m.snapshot().enabled); assertFalse(m.save()); assertEquals(future, Files.readString(path));
     }
@@ -63,10 +63,11 @@ class FoundationTest {
     @Test void oversizedFloatingPointNumbersRecover() throws Exception {
         Files.writeString(directory.resolve("autogamble.json"), "{\"autoPayAmount\":1e999,\"winChance\":-1e999}");
         var m = manager(); assertDoesNotThrow(m::load);
-        assertEquals(1, m.snapshot().autoPayAmount); assertEquals(.5, m.snapshot().winChance);
+        assertEquals(1, m.snapshot().autoPayAmount); assertEquals(.425, m.snapshot().winChance);
     }
     @Test void independentRandomDeadlinesAndReset() {
         var m = new AutoPayManager(); var c = new AutoGambleConfig(); var random = new Random(7);
+        c.minimumAutoPayDelaySeconds = 2; c.maximumAutoPayDelaySeconds = 5;
         int dueAtMidpoint = 0;
         for (int i = 0; i < 100; i++) {
             m.scheduleAfterPayment(0, c, random);

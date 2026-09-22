@@ -47,9 +47,10 @@ class ReportViewDataTest {
     }
 
     @Test void reportsPageIsVisibleInMainNavigation() throws Exception {
-        Field field = AutoGambleSettingsScreen.class.getDeclaredField("PAGES");
+        Field field = AutoGambleSettingsScreen.class.getDeclaredField("CATEGORIES");
         field.setAccessible(true);
-        assertTrue(List.of((String[]) field.get(null)).contains("Reports"));
+        assertTrue(List.of((String[]) field.get(null)).contains("Data & Advanced"));
+        assertEquals(2, AutoGambleSettingsScreen.categoryFor(6));
     }
 
     @Test void paymentsToPlayersViewerOpens() {

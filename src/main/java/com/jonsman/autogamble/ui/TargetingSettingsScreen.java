@@ -83,7 +83,7 @@ public final class TargetingSettingsScreen extends Screen {
     @Override public void onClose(){minecraft.gui.setScreen(parent);}
     @Override public void extractRenderState(GuiGraphicsExtractor g,int mx,int my,float delta){
         super.extractRenderState(g,mx,my,delta); g.centeredText(font,title,width/2,15,0xFFFFFFFF);
-        g.centeredText(font,"Active payments use the 1.2.4 random /pay prefix method",width/2,30,0xFF99DDCC);
+        g.centeredText(font,"Active payments use the 1.2.4 random /pay prefix method",width/2,30,UiAccent.rgb(draft.working));
         fields.forEach((field,box)->g.text(font,field.label,left,box.getY()+6,0xFFE0E0E0));
         if(page==0)g.centeredText(font,"Saved experimental split: "+draft.working.smartRandomWeight+"% / "+draft.working.moneyLeaderboardWeight+"% (inactive)",width/2,184,0xFFAAAAAA);
         if(page==3) renderAnalytics(g);
