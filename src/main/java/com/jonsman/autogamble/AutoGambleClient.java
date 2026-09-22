@@ -156,7 +156,7 @@ public final class AutoGambleClient implements ClientModInitializer {
                             + ", Lifetime Customers: " + stats.customers().size()));
                     return 1;
                 }))));
-        LOGGER.info("[AutoGamble] 1.3.2 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
+        LOGGER.info("[AutoGamble] 1.3.3 initialized; {} incoming patterns enabled; dry run={}", parser.enabledCount(), activeConfig.dryRunMode);
     }
     private void receive(Component message, ReceivedMessage.Channel channel) {
         var client = Minecraft.getInstance();
@@ -238,7 +238,10 @@ public final class AutoGambleClient implements ClientModInitializer {
         follow.tick(config, now, dispatcher::sendFollow);
         balanceRules.tick(config, knownBalance, now, System.currentTimeMillis(),
                 (player, amount) -> dispatcher.sendPayment(player, amount, OutgoingPaymentTracker.Source.BALANCE_RULE));
-        if (!baltopCrawler.running()) autoPay.tick(now, config, dispatcher, selection);
+        if (!baltopCrawler.running()) {
+            dispatcher.refillRecipients(now);
+            autoPay.tick(now, config, dispatcher, selection);
+        }
     }
     private void cancelWork() { if (dispatcher != null) dispatcher.cancelDiscovery(); autoPay.reset(); payouts.cancel(); selection.reset(); }
     private void openSettings(Minecraft client) {
@@ -256,7 +259,7 @@ public final class AutoGambleClient implements ClientModInitializer {
                 () -> { if (client.getConnection()!=null) { client.gui.setScreen(null); baltopCrawler.start(System.nanoTime()); } },
                 () -> baltopCrawler.pause("Paused by user"),
                 () -> { boolean ok=baltopCrawler.resetAndRestart(System.nanoTime()); if(ok) client.gui.setScreen(null); return ok; },
-                analytics::targetingSnapshot, dispatcher::diagnostics);
+                analytics::targetingSnapshot, dispatcher::diagnostics, dispatcher::upcomingRecipients);
     }
     private String automationStatus() {
         var c = activeConfig; var data = history.snapshot();

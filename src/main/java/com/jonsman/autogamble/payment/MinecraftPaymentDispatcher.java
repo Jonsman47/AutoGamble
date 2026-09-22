@@ -32,8 +32,12 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
     private final java.util.function.Supplier<com.jonsman.autogamble.config.AutoGambleConfig> config;
     private final java.util.Random prefixRandom = new java.util.Random();
     private PrefixPlayerDiscovery discovery = new PrefixPlayerDiscovery(prefixRandom, 1, 3);
-    private List<Candidate> legacyFilteredCandidates;
-    private final Random legacyBalanceRandom = new Random();
+    private final EligibleRecipientQueue eligibleRecipientQueue = new EligibleRecipientQueue();
+    private long nextQueueQueryAt, nextBalanceProbeAt;
+    private boolean hasEligibleBalance;
+    private long queueCandidatesChecked, queueCandidatesAccepted;
+    private static final long QUEUE_QUERY_INTERVAL = 200_000_000L;
+    private static final long BALANCE_EVIDENCE_TTL_MILLIS = 6L * 60 * 60 * 1000;
     private int prefixMin = 1, prefixMax = 3;
     private final FailedTargetBlacklist failed = new FailedTargetBlacklist();
     private final BaltopDatabase baltop;
@@ -71,11 +75,62 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
                 && client.getConnection() != null && client.getConnection().getConnection().isConnected();
     }
     @Override public boolean inputBlocked() { return client == null || client.gui.screen() != null || client.gui.overlay() != null; }
-    public void resetSession() { discovery.reset(); legacyFilteredCandidates=null; failed.reset(); resetTargetingCycle(); }
-    public void cancelDiscovery() { discovery.cancel(); legacyFilteredCandidates=null; resetTargetingCycle(); }
+    public void resetSession() { discovery.reset(); eligibleRecipientQueue.clear(); nextQueueQueryAt=nextBalanceProbeAt=0; hasEligibleBalance=false; queueCandidatesChecked=queueCandidatesAccepted=0; failed.reset(); resetTargetingCycle(); }
+    public void cancelDiscovery() { discovery.cancel(); eligibleRecipientQueue.clear(); nextQueueQueryAt=nextBalanceProbeAt=0; hasEligibleBalance=false; resetTargetingCycle(); }
     @Override public void finishDiscovery() {
-        discovery.cancel(); legacyFilteredCandidates=null;
+        if (config.get().minimumPaymentBalance.signum()==0 || ExperimentalFeatures.BALTOP_PAYMENT_FEATURE_ENABLED) discovery.cancel();
         if (ExperimentalFeatures.BALTOP_PAYMENT_FEATURE_ENABLED) resetTargetingCycle();
+    }
+    /** Called once per client tick, independently of the Auto Pay deadline. */
+    public void refillRecipients(long now) {
+        if (ExperimentalFeatures.BALTOP_PAYMENT_FEATURE_ENABLED || !connected() || inputBlocked()) return;
+        var c=config.get();
+        if (!c.enabled || !c.autoPayEnabled || c.minimumPaymentBalance.signum()<=0) return;
+        if (prefixMin!=c.minimumPrefixLength || prefixMax!=c.maximumPrefixLength) {
+            discovery.cancel(); eligibleRecipientQueue.clear();
+            prefixMin=c.minimumPrefixLength; prefixMax=c.maximumPrefixLength;
+            discovery=new PrefixPlayerDiscovery(prefixRandom,prefixMin,prefixMax);
+        }
+        if (!eligibleRecipientQueue.needsRefill(now)) return;
+        if (nextBalanceProbeAt==0 || now-nextBalanceProbeAt>=0) {
+            hasEligibleBalance=baltop!=null && baltop.hasRecentBalanceAtLeast(c.minimumPaymentBalance,
+                    System.currentTimeMillis(),BALANCE_EVIDENCE_TTL_MILLIS);
+            nextBalanceProbeAt=now+5_000_000_000L;
+        }
+        if (!hasEligibleBalance) return;
+        if (discovery.ready()) {
+            var filled=eligibleRecipientQueue.addApproved(discovery.candidates(),c.minimumPaymentBalance,
+                    name->baltop==null?null:baltop.entryOf(name),now,System.currentTimeMillis(),BALANCE_EVIDENCE_TTL_MILLIS);
+            queueCandidatesChecked+=filled.checked(); queueCandidatesAccepted+=filled.accepted();
+            discovery.cancel();
+        }
+        if (nextQueueQueryAt!=0 && now-nextQueueQueryAt<0) return;
+        var activeDiscovery=discovery;
+        discovery.poll(now,selection,false).ifPresent(request -> {
+            nextQueueQueryAt=now+QUEUE_QUERY_INTERVAL;
+            var connection=client.getConnection();
+            String local=client.player.getGameProfile().name();
+            try {
+                var context=connection.getCommands().parse(request.command().substring(1),connection.getSuggestionsProvider())
+                        .getContext().build(request.command());
+                connection.getSuggestionsProvider().customSuggestion(context).whenComplete((result,error) ->
+                    client.execute(() -> {
+                        if (client.getConnection()!=connection || discovery!=activeDiscovery) return;
+                        var current=config.get();
+                        if (!current.enabled || !current.autoPayEnabled || current.minimumPaymentBalance.signum()==0) {
+                            discovery.cancel(); return;
+                        }
+                        discovery.complete(request.token(),error==null?result.getList().stream().map(s->s.getText()).toList():List.of(),
+                                local,current.excludeNumericOnlyNames,failed,selection,false,System.nanoTime());
+                    }));
+            } catch (RuntimeException ex) {
+                discovery.complete(request.token(),List.of(),local,c.excludeNumericOnlyNames,failed,selection,false,now);
+            }
+        });
+    }
+    public List<String> upcomingRecipients() {
+        if (config.get().minimumPaymentBalance.signum()==0) return List.of();
+        return eligibleRecipientQueue.snapshot(System.nanoTime()).stream().limit(5).map(Candidate::username).toList();
     }
     public String playerSource() {
         if (!ExperimentalFeatures.BALTOP_PAYMENT_FEATURE_ENABLED) return "RANDOM_PREFIX_SUGGESTIONS";
@@ -86,7 +141,9 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
             + ", Last Prefix Length: " + discovery.lastLength() + ", Prefix Attempts This Cycle: " + discovery.attempts()
             + ", Last Auto Pay Prefix: " + discovery.prefix() + ", Last Candidate Count: " + discovery.count()
             + ", Last Selected Player: " + discovery.selected() + ", Numeric-Only Filter: "
-            + (config.get().excludeNumericOnlyNames ? "ON" : "OFF") + ", Failed Target Blacklist: " + failed.size(System.nanoTime());
+            + (config.get().excludeNumericOnlyNames ? "ON" : "OFF") + ", Failed Target Blacklist: " + failed.size(System.nanoTime())
+            + ", Eligible Queue: " + eligibleRecipientQueue.snapshot(System.nanoTime()).size()
+            + ", Balance Checked: " + queueCandidatesChecked + ", Accepted: " + queueCandidatesAccepted;
     }
     public TargetingDiagnostics diagnostics() {
         var snapshot = baltop == null ? null : baltop.snapshot();
@@ -149,8 +206,9 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
     private boolean prepareLegacy(long now) {
         if (!connected() || inputBlocked()) return false;
         var c = config.get();
+        if (c.minimumPaymentBalance.signum()>0) return !eligibleRecipientQueue.snapshot(now).isEmpty();
         if (prefixMin != c.minimumPrefixLength || prefixMax != c.maximumPrefixLength) {
-            discovery.cancel(); legacyFilteredCandidates=null;
+            discovery.cancel();
             prefixMin = c.minimumPrefixLength; prefixMax = c.maximumPrefixLength;
             discovery = new PrefixPlayerDiscovery(prefixRandom, prefixMin, prefixMax);
         }
@@ -178,14 +236,11 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
     @Override public List<Candidate> eligiblePlayers() {
         if (!connected()) return List.of();
         if (!ExperimentalFeatures.BALTOP_PAYMENT_FEATURE_ENABLED) {
+            if (config.get().minimumPaymentBalance.signum()>0) return eligibleRecipientQueue.snapshot(System.nanoTime());
             List<Candidate> discovered=discovery.candidates().stream()
                     .filter(p -> PrefixPlayerDiscovery.validName(p.username(),client.player.getGameProfile().name(),config.get().excludeNumericOnlyNames)
                             && !failed.contains(p.username(),System.nanoTime())).toList();
-            var minimum=config.get().minimumPaymentBalance;
-            if (minimum.signum()==0) return discovered;
-            if (legacyFilteredCandidates==null) legacyFilteredCandidates=PaymentBalanceFilter.eligible(discovered,minimum,
-                    name -> baltop==null?null:baltop.balanceOf(name),legacyBalanceRandom);
-            return legacyFilteredCandidates;
+            return discovered;
         }
         return verifiedTarget == null || System.nanoTime()-verifiedAt > 2_000_000_000L ? List.of() : List.of(verifiedTarget);
     }
@@ -193,8 +248,14 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
         if (!connected() || inputBlocked() || !client.isSameThread() || !eligiblePlayers().contains(target)) return false;
         if (amount == null || !amount.matches("[0-9]+(?:\\.[0-9]{1,2})?")) return false;
         if (!ExperimentalFeatures.BALTOP_PAYMENT_FEATURE_ENABLED) {
-            discovery.selected(target.username());
+            if (config.get().minimumPaymentBalance.signum()>0 && !PaymentBalanceFilter.approved(
+                    baltop==null?null:baltop.entryOf(target.username()),config.get().minimumPaymentBalance,
+                    System.currentTimeMillis(),BALANCE_EVIDENCE_TTL_MILLIS)) {
+                eligibleRecipientQueue.remove(target.username()); return false;
+            }
+            if (config.get().minimumPaymentBalance.signum()==0) discovery.selected(target.username());
             boolean sent=sendPayment(target.username(),new java.math.BigDecimal(amount),OutgoingPaymentTracker.Source.ADVERTISING)==Result.SENT;
+            if (sent && config.get().minimumPaymentBalance.signum()>0) eligibleRecipientQueue.paid(target.username());
             if (sent && analytics!=null && !config.get().dryRunMode)
                 analytics.targetingPayment(TargetMethod.SMART_RANDOM,target.username(),new java.math.BigDecimal(amount),System.currentTimeMillis());
             return sent;
@@ -212,6 +273,20 @@ public final class MinecraftPaymentDispatcher implements AutoPayEnvironment, Pay
         if (sent && analytics != null && !config.get().dryRunMode)
             analytics.targetingPayment(suppliedBy, target.username(), new java.math.BigDecimal(amount), System.currentTimeMillis());
         return sent;
+    }
+    @Override public Optional<Candidate> nextQueuedRecipient(long now, boolean preferUnpaid) {
+        if (ExperimentalFeatures.BALTOP_PAYMENT_FEATURE_ENABLED || config.get().minimumPaymentBalance.signum()==0) return Optional.empty();
+        for (int i=0;i<EligibleRecipientQueue.TARGET_SIZE;i++) {
+            var next=eligibleRecipientQueue.next(now,preferUnpaid,selection::wasPaid);
+            if (next.isEmpty()) return next;
+            String name=next.get().username();
+            if (PrefixPlayerDiscovery.validName(name,client.player.getGameProfile().name(),config.get().excludeNumericOnlyNames)
+                    && !failed.contains(name,now)
+                    && PaymentBalanceFilter.approved(baltop==null?null:baltop.entryOf(name),config.get().minimumPaymentBalance,
+                            System.currentTimeMillis(),BALANCE_EVIDENCE_TTL_MILLIS)) return next;
+            eligibleRecipientQueue.remove(name);
+        }
+        return Optional.empty();
     }
 
     private boolean chooseMethod(AutoGambleConfig c, long now) {

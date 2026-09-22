@@ -171,10 +171,15 @@ public final class AutoGambleSettingsScreen extends Screen {
     @Override public void extractRenderState(GuiGraphicsExtractor g, int mx, int my, float delta) {
         super.extractRenderState(g, mx, my, delta);
         g.centeredText(font, title, width / 2, 15, 0xFFFFFFFF);
-        g.centeredText(font, "1.3.2  •  " + (draft.working.dryRunMode ? "DRY RUN — no real payments" : "REAL PAYMENTS") + "  •  Save to apply", width / 2, 30, draft.working.dryRunMode ? 0xFF99DDCC : 0xFFFFBB66);
+        g.centeredText(font, "1.3.3  •  " + (draft.working.dryRunMode ? "DRY RUN — no real payments" : "REAL PAYMENTS") + "  •  Save to apply", width / 2, 30, draft.working.dryRunMode ? 0xFF99DDCC : 0xFFFFBB66);
         fields.forEach((field, box) -> g.text(font, field.label, left, box.getY() + 6, 0xFFE0E0E0));
         if (page == 0 && height > 300) g.centeredText(font, font.plainSubstrByWidth(status, panel), width / 2, height - 48, 0xFFAAAAAA);
-        if (page == 1) g.text(font, "Minimum Payment Balance: 0 disables the filter", left, 199, 0xFF99DDCC);
+        if (page == 1) {
+            var upcoming = context.upcomingRecipients().get();
+            String preview = draft.working.minimumPaymentBalance.signum()==0 ? "Balance filter off (0)"
+                    : "Upcoming: " + (upcoming.isEmpty() ? "searching…" : String.join(", ",upcoming.stream().limit(3).toList()));
+            g.text(font,font.plainSubstrByWidth(preview,panel),left,199,0xFF99DDCC);
+        }
         if (page == 3) g.textWithWordWrap(font, Component.literal("Winners are paid one at a time. Disabling gambling clears pending payouts."), left, 132, panel, 0xFFAAAAAA);
         if (page == 4 && height > 300) g.textWithWordWrap(font, Component.literal("DonutSMP incoming payments are supported. Test messages in dry run before enabling real payments."), left, 190, panel, 0xFFAAAAAA);
         if (page == 5) {

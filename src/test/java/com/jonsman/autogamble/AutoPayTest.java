@@ -6,6 +6,7 @@ import com.jonsman.autogamble.manager.PlayerSelectionManager.Candidate;
 import com.jonsman.autogamble.payment.*;
 import org.junit.jupiter.api.Test;
 import java.util.*;
+import java.math.BigDecimal;
 import static org.junit.jupiter.api.Assertions.*;
 
 class AutoPayTest {
@@ -18,15 +19,22 @@ class AutoPayTest {
     private class FakeEnvironment implements AutoPayEnvironment {
         boolean connected = true, blocked, succeeds = true, throwsOnDispatch;
         int scans, attempts, sent;
+        int queueReads;
+        boolean queueMode;
+        Deque<Candidate> queued = new ArrayDeque<>();
         String amount;
         List<Candidate> players = List.of(bob, alex, steve);
         public boolean connected() { return connected; }
         public boolean inputBlocked() { return blocked; }
-        public List<Candidate> eligiblePlayers() { scans++; return players; }
+        public List<Candidate> eligiblePlayers() { scans++; return queueMode ? List.copyOf(queued) : players; }
+        public boolean prepare(long now) { return !queueMode || !queued.isEmpty(); }
+        public Optional<Candidate> nextQueuedRecipient(long now, boolean preferUnpaid) {
+            queueReads++; return Optional.ofNullable(queued.peekFirst());
+        }
         public boolean dispatch(Candidate target, String amount) {
             attempts++; this.amount = amount;
             if (throwsOnDispatch) throw new IllegalStateException("Disconnected during attempt");
-            if (succeeds) sent++;
+            if (succeeds) { sent++; if (queueMode) queued.remove(target); }
             return succeeds;
         }
     }
@@ -90,6 +98,24 @@ class AutoPayTest {
         }
         assertTrue(delays.size() > 90);
         assertTrue(delays.stream().anyMatch(d -> d % 1_000_000_000L != 0));
+    }
+    @Test void approvedQueueDoesNotAddSearchDelayToPaymentTimer() {
+        config.minimumPaymentBalance = new BigDecimal("100000000");
+        config.minimumAutoPayDelaySeconds=.2; config.maximumAutoPayDelaySeconds=1.6;
+        env.queueMode=true; env.queued.addAll(List.of(bob,alex)); start();
+        long first=due(); assertTrue(first>=200_000_000L && first<=1_600_000_000L);
+        tick(first); assertEquals(1,env.sent); assertEquals(1,env.queueReads);
+        long second=first+manager.remainingNanos(first);
+        assertTrue(second-first>=200_000_000L && second-first<=1_600_000_000L);
+        tick(second); assertEquals(2,env.sent);
+        long third=second+manager.remainingNanos(second);
+        tick(third); assertEquals(2,env.sent); assertEquals("DISCOVERING",manager.state());
+        env.queued.add(steve); tick(third+50_000_000L);
+        assertEquals(3,env.sent); assertTrue(manager.remainingNanos(third+50_000_000L)>=200_000_000L);
+    }
+    @Test void zeroMinimumDoesNotReadTheApprovedQueue() {
+        env.queueMode=false; config.minimumPaymentBalance=BigDecimal.ZERO; start(); tick(due());
+        assertEquals(1,env.sent); assertEquals(0,env.queueReads);
     }
     @Test void nextCycleUsesChangedDelayAndEqualBoundsWork() {
         start(); long first = due();

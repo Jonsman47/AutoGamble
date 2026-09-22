@@ -51,6 +51,6 @@ Payer history: `config/autogamble-payers.json`
 
 With Java 25, run `gradlew.bat test` then `gradlew.bat build` (Linux/macOS: `sh gradlew`).
 
-Version **1.3.2** restores legacy Auto Pay recipients while retaining the baltop scanner for future development. Earlier release JARs and historical source remain preserved. New builds go to `build/libs/`. See [v1.3.2 notes](docs/PATCH-1.3.2.md).
+Version **1.3.3** fills a short lived balance approved recipient queue ahead of the Auto Pay timer. Legacy `/pay` suggestions still supply names, and baltop payment modes remain inactive. Earlier release JARs and historical source remain preserved. New builds go to `build/libs/`. See [v1.3.3 notes](docs/PATCH-1.3.3.md).
 
 Before publishing each new version, archive the outgoing release's exact published JAR and matching sources JAR under `releases/archive/<version>/`. See the [release checklist](docs/RELEASING.md).

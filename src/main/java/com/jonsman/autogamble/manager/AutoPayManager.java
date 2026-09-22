@@ -49,9 +49,12 @@ public final class AutoPayManager {
             }
             invalidAmountReported = false;
             var candidates = environment.eligiblePlayers();
-            var target = com.jonsman.autogamble.targeting.ExperimentalFeatures.BALTOP_PAYMENT_FEATURE_ENABLED
-                    ? selection.select(candidates, config.preferUnpaidPlayers, playerRandom, nowNanos)
-                    : selection.selectLegacy(candidates, config.preferUnpaidPlayers, playerRandom);
+            var target = !com.jonsman.autogamble.targeting.ExperimentalFeatures.BALTOP_PAYMENT_FEATURE_ENABLED
+                    && config.minimumPaymentBalance.signum()>0
+                    ? environment.nextQueuedRecipient(nowNanos, config.preferUnpaidPlayers)
+                    : com.jonsman.autogamble.targeting.ExperimentalFeatures.BALTOP_PAYMENT_FEATURE_ENABLED
+                        ? selection.select(candidates, config.preferUnpaidPlayers, playerRandom, nowNanos)
+                        : selection.selectLegacy(candidates, config.preferUnpaidPlayers, playerRandom);
             if (target.isEmpty()) {
                 if (!emptyReported) LOG.info("[AutoGamble] No verified Auto Pay target found this cycle; retrying after the configured delay");
                 state = "NO_CANDIDATES"; emptyReported = true;

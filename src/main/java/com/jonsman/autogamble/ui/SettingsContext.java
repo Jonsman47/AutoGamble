@@ -17,7 +17,7 @@ public record SettingsContext(ConfigManager configs, Runnable changed, Runnable 
         Supplier<BaltopDatabase.Snapshot> baltopData, Supplier<BaltopCrawler.Status> baltopStatus,
         Runnable startBaltop, Runnable pauseBaltop, BooleanSupplier resetBaltop,
         Supplier<List<AnalyticsEngine.MethodStats>> targetingAnalytics,
-        Supplier<TargetingDiagnostics> targetingDiagnostics) {
+        Supplier<TargetingDiagnostics> targetingDiagnostics, Supplier<List<String>> upcomingRecipients) {
     private static TargetingDiagnostics emptyDiagnostics() {
         return new TargetingDiagnostics("Waiting",0,0,0,0,0,0,0,0,0,0,0,0,0,"","","","","",-1,"");
     }
@@ -30,7 +30,7 @@ public record SettingsContext(ConfigManager configs, Runnable changed, Runnable 
                 analytics, reports, refreshReports, tipping, disableTipping,
                 () -> new BaltopDatabase.Snapshot(List.of(),0,0,0,false,0,""),
                 () -> new BaltopCrawler.Status(BaltopCrawler.State.IDLE,0,0,false,-1,0,0,0,"",""),
-                () -> {}, () -> {}, () -> false, List::of, SettingsContext::emptyDiagnostics);
+                () -> {}, () -> {}, () -> false, List::of, SettingsContext::emptyDiagnostics, List::of);
     }
     public SettingsContext(ConfigManager configs, Runnable changed, Runnable resetPaid, Supplier<String> status, Supplier<String> localUsername) {
         this(configs, changed, resetPaid, status, localUsername, () -> false);
@@ -41,6 +41,6 @@ public record SettingsContext(ConfigManager configs, Runnable changed, Runnable 
                 () -> new TippingManager.Snapshot(0, false, ""), () -> TippingManager.QueueResult.FULL,
                 () -> new BaltopDatabase.Snapshot(List.of(),0,0,0,false,0,""),
                 () -> new BaltopCrawler.Status(BaltopCrawler.State.IDLE,0,0,false,-1,0,0,0,"",""),
-                () -> {}, () -> {}, () -> false, List::of, SettingsContext::emptyDiagnostics);
+                () -> {}, () -> {}, () -> false, List::of, SettingsContext::emptyDiagnostics, List::of);
     }
 }
