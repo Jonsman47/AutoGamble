@@ -18,13 +18,13 @@ public final class EligibleRecipientQueue {
     public record Refill(int checked, int accepted) {}
 
     public Refill addApproved(List<Candidate> candidates, BigDecimal minimum,
-            Function<String, BaltopEntry> lookup, long nowNanos, long nowMillis, long evidenceTtlMillis) {
+            Function<String, BaltopEntry> lookup, long nowNanos) {
         int checked=0, accepted=0;
         for (Candidate candidate:candidates) {
             if (!needsRefill(nowNanos) || checked>=100) break;
             checked++;
             if (candidate!=null && candidate.username()!=null
-                    && PaymentBalanceFilter.approved(lookup.apply(candidate.username()),minimum,nowMillis,evidenceTtlMillis)
+                    && PaymentBalanceFilter.approved(lookup.apply(candidate.username()),minimum)
                     && offer(candidate,nowNanos)) accepted++;
         }
         return new Refill(checked,accepted);

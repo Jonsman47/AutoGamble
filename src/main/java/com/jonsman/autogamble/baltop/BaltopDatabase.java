@@ -40,10 +40,8 @@ public final class BaltopDatabase implements AutoCloseable {
     public synchronized BaltopEntry entryOf(String username) {
         return username == null ? null : entries.get(username.toLowerCase(Locale.ROOT));
     }
-    public synchronized boolean hasRecentBalanceAtLeast(BigDecimal minimum, long nowMillis, long maxAgeMillis) {
-        for (BaltopEntry entry:entries.values()) if (entry.balance().compareTo(minimum)>=0
-                && entry.lastSeenInBaltop()>0 && nowMillis>=entry.lastSeenInBaltop()
-                && nowMillis-entry.lastSeenInBaltop()<=maxAgeMillis) return true;
+    public synchronized boolean hasBalanceAtLeast(BigDecimal minimum) {
+        for (BaltopEntry entry:entries.values()) if (entry.balance().compareTo(minimum)>=0) return true;
         return false;
     }
     /** Only a contiguous, nonempty page advances resume metadata; the newest observation wins for duplicate names. */

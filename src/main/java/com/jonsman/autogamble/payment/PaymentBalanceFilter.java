@@ -10,10 +10,9 @@ import java.util.function.Function;
 public final class PaymentBalanceFilter {
     public static final int MAX_CHECKS = 30;
     private PaymentBalanceFilter() {}
-    /** Scanned balance evidence is usable for a bounded period; no server query is made here. */
-    public static boolean approved(BaltopEntry entry, BigDecimal minimum, long nowMillis, long maxAgeMillis) {
-        return entry != null && minimum != null && minimum.signum()>0 && entry.lastSeenInBaltop()>0
-                && nowMillis>=entry.lastSeenInBaltop() && nowMillis-entry.lastSeenInBaltop()<=maxAgeMillis
+    /** Last known scanned balance; fresh /pay suggestions establish current recipient availability. */
+    public static boolean approved(BaltopEntry entry, BigDecimal minimum) {
+        return entry != null && minimum != null && minimum.signum()>0
                 && entry.balance().compareTo(minimum)>=0;
     }
     public static List<Candidate> eligible(List<Candidate> discovered, BigDecimal minimum,

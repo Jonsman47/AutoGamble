@@ -75,7 +75,7 @@ public final class BaltopCrawler {
                 if(parsed.entries().isEmpty()) { pause("No parseable players on page "+currentPage+"; inspect debug output"); return; }
                 if(parsed.fingerprint().equals(lastFingerprint)) { duplicatePages++; pause("Duplicate page content; stopping to avoid repeated clicks"); return; }
                 lastFingerprint=parsed.fingerprint(); lastParsed=parsed.entries().size(); sessionPages++;
-                if(currentPage>database.snapshot().highestPage() && !database.recordPage(currentPage,parsed.entries(),System.currentTimeMillis())) {
+                if(!database.recordPage(currentPage,parsed.entries(),System.currentTimeMillis())) {
                     pause("Could not persist page "+currentPage); return;
                 }
                 nextSlot=parsed.nextSlot(); nextFound=nextSlot>=0;

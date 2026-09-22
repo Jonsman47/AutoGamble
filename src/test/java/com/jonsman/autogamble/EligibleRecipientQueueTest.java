@@ -17,7 +17,7 @@ class EligibleRecipientQueueTest {
         var queue=new EligibleRecipientQueue();
         var data=Map.of("Rich",balance("Rich","100000000",1000),"Low",balance("Low","99999999",1000));
         var result=queue.addApproved(List.of(player("Low"),player("Unknown"),player("Rich")),
-                new BigDecimal("100000000"),data::get,0,1000,10000);
+                new BigDecimal("100000000"),data::get,0);
         assertEquals(new EligibleRecipientQueue.Refill(3,1),result);
         assertEquals(List.of(player("Rich")),queue.snapshot(0));
     }
@@ -26,20 +26,28 @@ class EligibleRecipientQueueTest {
         var many=new ArrayList<Candidate>();var data=new HashMap<String,BaltopEntry>();
         for(int i=0;i<40;i++){String name="Player"+i;many.add(player(name));data.put(name,balance(name,"200000000",1000));}
         many.add(player("pLaYeR0"));
-        var result=queue.addApproved(many,new BigDecimal("100000000"),data::get,0,1000,10000);
+        var result=queue.addApproved(many,new BigDecimal("100000000"),data::get,0);
         assertEquals(20,result.accepted()); assertEquals(20,queue.snapshot(0).size());
         for(int i=0;i<15;i++)queue.paid("Player"+i);
         assertTrue(queue.low(0));
-        result=queue.addApproved(many,new BigDecimal("100000000"),data::get,1,1000,10000);
+        result=queue.addApproved(many,new BigDecimal("100000000"),data::get,1);
         assertEquals(15,result.accepted());assertEquals(20,queue.snapshot(1).size());
     }
-    @Test void staleEvidenceAndQueueExpiryRequireFreshDiscovery() {
+    @Test void queueExpiryRequiresFreshSuggestionButDoesNotDiscardKnownBalance() {
         var queue=new EligibleRecipientQueue();
         var data=Map.of("Rich",balance("Rich","100000000",1000));
-        assertEquals(0,queue.addApproved(List.of(player("Rich")),BigDecimal.ONE,data::get,0,12000,10000).accepted());
-        assertEquals(1,queue.addApproved(List.of(player("Rich")),BigDecimal.ONE,data::get,0,1000,10000).accepted());
+        assertEquals(1,queue.addApproved(List.of(player("Rich")),BigDecimal.ONE,data::get,0).accepted());
         assertTrue(queue.snapshot(EligibleRecipientQueue.ENTRY_TTL_NANOS).isEmpty());
         assertTrue(queue.needsRefill(EligibleRecipientQueue.ENTRY_TTL_NANOS));
+        assertEquals(1,queue.addApproved(List.of(player("Rich")),BigDecimal.ONE,data::get,
+                EligibleRecipientQueue.ENTRY_TTL_NANOS).accepted());
+    }
+    @Test void persistedOlderBalanceCanStillSupplyARecipient() {
+        var queue=new EligibleRecipientQueue();
+        var data=Map.of("Rich",balance("Rich","250000000",1000));
+        var filled=queue.addApproved(List.of(player("Rich")),new BigDecimal("100000000"),
+                data::get,1);
+        assertEquals(1,filled.accepted(),"A persisted scan must not permanently block all filtered payments");
     }
     @Test void avoidsImmediateRepeatWhenAnotherRecipientIsReady() {
         var queue=new EligibleRecipientQueue();queue.offer(player("Bob"),0);queue.offer(player("Alex"),0);
